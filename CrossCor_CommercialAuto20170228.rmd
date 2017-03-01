@@ -1,7 +1,7 @@
 ---
 title: 'Cross Correlation Analysis: Relationship between Diesel Prices and Commercial Auto Premiums'
 author: "Bob McPherson"
-date: "February 24, 2017"
+date: "March 1, 2017"
 output: word_document
 ---
 
