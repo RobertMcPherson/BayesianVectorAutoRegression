@@ -128,28 +128,30 @@ crosscor.test <- function(x,y){
   }
   R
 }
+
 ```
 
 # Examine Lags
 In this section, we apply the functions above, to examine the possible lags.  The time series is offset by one period, and the correlation is tested.  This process is repeated, until the maximum number of lags is reached.  A p-value is calculated for each correlation, to test the statistical significance.  The candidate lag with the most significant p-value is selected as the best lag to use in offsetting the time series data.  The smallest p-value corresponds to the most statistically significant value.
 
 ```{r p-values}
+
 (R <- crosscor(x,y))
 (R.test <- crosscor.test(x,y)) 
 
-plot(R,main="Plot of Correlations for Differenced Data")
+plot(R,main="Plot of Correlations")
 
-plot(R.test,main="Plot of P-Values for Differenced Data")
+plot(R.test,main="Plot of P-Values")
 
-if(abs(min(R))>=max(R)){
-  (max.cor <- which.min(R))
-  direction <- "negative, meaning when one trend goes up, the trend for the other variable tends to move in the opposite direction"
+(best.pval.index <- which.min(R.test))
+
+(best.pval <- R.test[best.pval.index])
+
+if(best.pval <= .05){
+  pval.comment <- "This p-value suggests that the best lag is statistically significant at the 95% confidence level."
 } else {
-  (max.cor <- which.max(R))
-  direction <- "positive, meaning when one trend goes up or down, the trend for the other     variable tends to move in the same direction"
-}
-
-best.correlation <- R[max.cor]
+  pval.comment <- "This p-value suggests that the best lag is not statistically significant at the 95% confidence level."
+  }
 
 ```
 # Absolute Correlation Value Comparisons
@@ -167,8 +169,12 @@ if(abs(min(R))>=max(R)){
 
 (best.lag <- ((-1*min.vector):(min.vector))[max.cor])
 
+best.correlation <- R[max.cor]
+
+
+
 ```
-The best lag for the data is `r best.lag` years. The correlation coefficient for the best lag is `r best.correlation`.  The sign of the correlation coefficient is `r direction`.
+The best lag for the data is `r best.lag` years. The correlation coefficient for the best lag is `r best.correlation`.  The sign of the correlation coefficient is `r direction`.  The p-value for the best lag is `r best.pval`.  `r pval.comment`
 
 ```{r PlotLags}
 
@@ -228,8 +234,21 @@ if(abs(min(S))>=max(S)){
 }
 
 best.lag <- ((-1*min.vector):(min.vector))[max.cor] 
+
+best.correlation <- S[max.cor]
+
+(best.pval.index <- which.min(S.test))
+
+(best.pval <- S.test[best.pval.index])
+
+if(best.pval <= .05){
+  pval.comment <- "This p-value suggests that the best lag is statistically significant at the 95% confidence level."
+} else {
+  pval.comment <- "This p-value suggests that the best lag is not statistically significant at the 95% confidence level."
+  }
+
 ```
-The best lag for the data is `r best.lag` years. The correlation coefficient for the best lag is `r best.correlation`.  The sign of the correlation coefficient is `r direction`.
+The best lag for the data is `r best.lag` years. The correlation coefficient for the best lag is `r best.correlation`.  The sign of the correlation coefficient is `r direction`.  The p-value for the best lag is `r best.pval`.  `r pval.comment`
 
 ```{r PlotsOfDifferencedVersusNonDifferenced}
 
