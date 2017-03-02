@@ -1,5 +1,5 @@
 ---
-title: 'Cross Correlation Analysis: Relationship between Diesel Prices and Commercial Auto Premiums'
+title: 'Cross Correlation Analysis of Commercial Auto Related, Public Time Series Data'
 author: "Bob McPherson"
 date: "March 1, 2017"
 output: word_document
@@ -11,6 +11,8 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ##Remove All Objects before Running the Analysis
 rm(list=ls())
+
+#getwd()
 
 #install.packages("Hmisc")
 #install.packages("devtools")
@@ -43,12 +45,13 @@ str(indep.var)
 indep.var2 <- indep.var[nrow(indep.var):1,] #reverse order to ascending...oldest at beginning
 str(indep.var2)
 x <- indep.var2$`Mobile-cellular telephone subscriptions per 100 inhabitants`
+x.dates <- indep.var2$Date
 (indep.var.max.year <- max(indep.var2$Date))
 (indep.var.min.year <- min(indep.var2$Date))
 (indep.var.total.years <- as.numeric((indep.var.max.year - indep.var.min.year) / 365))
 
 ##Get Producer Price Index by Commodity for Fuels and Related Products and Power: No. 2 Diesel Fuel
-#indep.var <- Quandl("FRED/WPU05730302", api_key="DJGcfzQc5RYP1JSycMBv", collapse="annual") 
+#indep.var <- Quandl("FRED/WPU05730302", api_key="DJGcfzQc5RYP1JSycMBv", collapse="annual")
 #str(indep.var)
 #indep.var2 <- indep.var[nrow(indep.var):1,] #reverse order to ascending...oldest at beginning
 #x <- indep.var2$VALUE
@@ -74,6 +77,7 @@ dep.var <- Quandl("NHTSA/FTR_LTR_PK_US", api_key="DJGcfzQc5RYP1JSycMBv", collaps
 dep.var2 <- dep.var[nrow(dep.var):1,] #reverse order to ascending...oldest at beginning
 #str(dep.var2)
 y <- dep.var2$`Multiple--Vehicle`
+y.dates <- dep.var2$Year
 (dep.var.max.year <- max(dep.var2$Year))
 (dep.var.min.year <- min(dep.var2$Year))
 (dep.var.total.years <- as.numeric((dep.var.max.year - dep.var.min.year) / 365))
@@ -105,16 +109,13 @@ dep.var.min.year
 min.length <- min(length(x),length(y))
 
 x <- x[((length(x)-min.length)+1):length(x)]
-
 y <- y[((length(y)-min.length)+1):length(y)]
 
-length(x)
-length(y)
-dep.var2$DATE
-indep.var2$DATE
+x.dates2 <- x.dates[((length(x.dates)-min.length)+1):length(x.dates)]
+y.dates2 <- y.dates[((length(y.dates)-min.length)+1):length(y.dates)]
 
-(dep.var.dates <- dep.var2$DATE[((length(dep.var2$DATE)-min.length)+1):length(dep.var2$DATE)])
-(indep.var.dates <- indep.var2$DATE[((length(indep.var2$DATE)-min.length)+1):length(indep.var2$DATE)])
+#(dep.var.dates <- dep.var2$DATE[((length(dep.var2$DATE)-min.length)+1):length(dep.var2$DATE)])
+#(indep.var.dates <- indep.var2$DATE[((length(indep.var2$DATE)-min.length)+1):length(indep.var2$DATE)])
 
 ##minimum number of values to match in correlations
 min.vector <- if(ceiling((length(x)/2)*.334) <= 4) 4 else ceiling((length(x)/2)*.334)
@@ -124,7 +125,7 @@ crosscor <- function(x,y){
   R=NULL
   i=0
   for (i in (-1*min.vector):(min.vector)) {
-    R <- rbind(R,cor(x,Lag(y,shift=i),use="pairwise.complete.obs"))    
+    R <- rbind(R,cor(x,Lag(y,shift=i),use="pairwise.complete.obs"))
   }
   R
 }
@@ -134,7 +135,7 @@ crosscor.test <- function(x,y){
   R=NULL
   i=0
   for (i in (-1*min.vector):(min.vector)) {
-    R <- rbind(R,cor.test(x,Lag(y,shift=i),use="pairwise.complete.obs")$p.value)    
+    R <- rbind(R,cor.test(x,Lag(y,shift=i),use="pairwise.complete.obs")$p.value)
   }
   R
 }
@@ -147,7 +148,7 @@ In this section, we apply the functions above, to examine the possible lags.  Th
 ```{r p-values}
 
 (R <- crosscor(x,y))
-(R.test <- crosscor.test(x,y)) 
+(R.test <- crosscor.test(x,y))
 
 plot(R,main="Plot of Correlations")
 
@@ -161,7 +162,8 @@ if(best.pval <= .05){
   pval.comment <- "This p-value suggests that the best lag is statistically significant at the 95% confidence level."
 } else {
   pval.comment <- "This p-value suggests that the best lag is not statistically significant at the 95% confidence level."
-  }
+}
+
 
 ```
 # Absolute Correlation Value Comparisons
@@ -181,19 +183,18 @@ if(abs(min(R))>=max(R)){
 
 best.correlation <- R[best.pval.index]
 
+##look at the lags to check them
+x.lagged <- Lag(x,shift=best.lag)
+x.dates.lagged <- Lag(x.dates2,shift=best.lag)
+(dates.compared <- data.frame(x.dates.lagged,y.dates2))
 
+##difference in years, including lag
+as.numeric(floor((max(y.dates2) - max(x.dates.lagged[length(x.dates2)])) / 365))
 
 ```
 The best lag for the data is `r best.lag` years. The correlation coefficient for the best lag is `r best.correlation`.  The sign of the correlation coefficient is `r direction`.  The p-value for the best lag is `r best.pval`.  `r pval.comment`
 
 ```{r PlotLags}
-
-#plot line graphs with no lag
-#plot(x,type="l")
-#par(new=T)
-#plot(y,type="l")
-#axis(side=4)
-#par(new=F)
 
 ##plot the variables after adjusting for the lag
 plot(y,type="l",col=1,xlab="Year",ylab="Dependent Var",main="Lining Up Each Trend, after Adjusting for the Best Lag")
@@ -205,7 +206,7 @@ legend("topleft",legend=c("Dependent Var","Independent Var"),lty=c(1,1),col=c("b
 par(new=F)
 ```
 # Auto Regressive Tendencies and First Order Differencing
-Data from a time series can often have a tendency to be correlated to itself.  A common situation that results in this phenomenon is seasonality.  This is called, auto regression.  The ACF function in R tests for auto regression.  We will use this function in this section.  
+Data from a time series can often have a tendency to be correlated to itself.  A common situation that results in this phenomenon is seasonality.  This is called, auto regression.  The ACF function in R tests for auto regression.  We will use this function in this section.
 
 We will also detrend the data using first order differencing.  This merely refers to subtracting each precending value from the value that follows.
 
@@ -229,7 +230,7 @@ Next, we run p-value significance tests on the cross correlations of the differe
 ```{r DifferencedCrossCorrelations}
 
 (S <- crosscor(x.diff,y.diff))
-(S.test <- crosscor.test(x.diff,y.diff)) 
+(S.test <- crosscor.test(x.diff,y.diff))
 
 plot(S,main="Plot of Correlations for Differenced Data")
 
@@ -243,7 +244,7 @@ if(abs(min(S))>=max(S)){
   direction <- "positive, meaning when one trend goes up or down, the trend for the other     variable tends to move in the same direction"
 }
 
-best.lag <- ((-1*min.vector):(min.vector))[max.cor] 
+best.lag <- ((-1*min.vector):(min.vector))[max.cor]
 
 best.correlation <- S[max.cor]
 
@@ -271,7 +272,7 @@ mtext(side=4,line=0,"Independent Var")
 legend("topleft",legend=c("Independent Var","Dependent Var"),lty=c(1,1),col=c("black","blue"))
 par(new=F)
 
-##plot line graph of lagged, NON-differenced data; 
+##plot line graph of lagged, NON-differenced data;
 plot(y,type="l",col=1,xlab="Year",ylab="Dependent Var",main="Lagged, Non-Differenced Data")
 par(new=T)
 plot(Lag(x,shift=best.lag),type="l",col="blue",xlab='',ylab='',axes=F)
