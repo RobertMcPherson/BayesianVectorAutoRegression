@@ -189,10 +189,29 @@ x.dates.lagged <- Lag(x.dates2,shift=best.lag)
 (dates.compared <- data.frame(x.dates.lagged,y.dates2))
 
 ##difference in years, including lag
-as.numeric(floor((max(y.dates2) - max(x.dates.lagged[length(x.dates2)])) / 365))
+net.lag <- as.numeric(floor((max(y.dates2) - max(x.dates.lagged[length(x.dates2)])) / 365))
+
+##max year
+indep.var.max.year
 
 ```
-The best lag for the data is `r best.lag` years. The correlation coefficient for the best lag is `r best.correlation`.  The sign of the correlation coefficient is `r direction`.  The p-value for the best lag is `r best.pval`.  `r pval.comment`
+- Item The best lag for the data is `r net.lag` years, after netting
+  the difference in the date ranges represented between the
+  independent, and dependent variables.
+- Item The correlation coefficient for the best lag is `r
+best.correlation`.
+- Item The sign of the correlation coefficient is `r direction`.
+- Item The p-value for the best lag is `r best.pval`.
+- Item `r pval.comment`
+
+The dates represented in the data for the independent and dependent
+variables are shown side by side below, adjusted for the best
+lag. This illustrates which date in the independent variable would
+predict a corresponding date's variable in the dependent variable.  In
+this case, we can see that the dates are offset by the amount of the
+best lag, which is `r net.lag` years.
+
+`r dates compared`
 
 ```{r PlotLags}
 
