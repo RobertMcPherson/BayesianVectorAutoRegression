@@ -1,0 +1,80 @@
+---
+title: "Bitcoin Price Analysis"
+author: "Bob McPherson"
+date: "10/12/2017"
+output: html_document
+---
+
+##Get Data from Quandl
+These data from Quandl include daily bitcoin prices.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+rm(list=ls())
+
+library(Quandl)
+library(caret)
+library(VGAM)
+
+BTC <- Quandl("BCHAIN/MKPRU")
+
+```
+
+##Check to Find the Oldest Date Value, and Limit the Date Range
+The data contain values all the way back to the year 2009.  This is too far back for our analysis.  As is often the case with new cryptocoins, there is a tendency for a new coin to rise in price initially, and drop.  This is sometimes referred to as "pump and dump", since the earliest investors will try to pump up the price with promotion, and then quickly sell to take their early profits.  Bitcoin saw a similar pattern.  The current bull market started near the end of 2015, or the beginning of 2016.  This section truncates the data to only include data beyond January 1, 2016.
+
+
+```{r}
+min(BTC$Date)
+
+BTC <- BTC[1:which(BTC$Date=="2016-01-01"),]
+
+#create index column
+BTC$Index <- (1:length(BTC[,1]))
+
+```
+
+##Transform the Data
+
+```{r}
+#BoxCoxTrans(BTC$Value)
+#summary(BTC)
+
+#?yeo.johnson
+#yeo.johnson(BTC$Value)
+#rev(BTC$Value)
+
+BTC.close <- log(BTC$Value)
+BTC.index <- rev(BTC$Index)
+
+```
+##Fit a Linear Model
+
+```{r}
+model1 <- lm(BTC.close ~ BTC.index)
+pred1 <- predict(model1)
+
+plot(BTC.close ~ BTC.index)
+lines(rev(pred1), col="blue")
+
+summary(model1)
+plot(model1)
+
+```
+
+##Fit a Second Order Polynomial
+The linear model fit is obviously not great, even after logarithmically transforming the data.  As seen below, a second order polynomial fits much better.  There is something more going on here than just the exponential nature of financial returns.  It may be that the algorithm that increases Bitcoin mining difficulty over time causes this upward shift in the trend, even after logarithmically correcting for the exponential trend pattern.
+
+```{r}
+model2 <- lm(BTC.close ~ c(BTC.index + (BTC.index)^2))
+pred2 <- predict(model2)
+
+plot(BTC.close ~ BTC.index)
+lines(rev(pred2), col="blue")
+
+summary(model2)
+plot(model2)
+
+```
+
