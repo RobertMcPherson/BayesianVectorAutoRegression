@@ -502,13 +502,15 @@ The preceding list, while lengthy, is helpful for not only seeing the few variab
 
 ```{r list_important_coefs}
 
-#coef.indices.lambda.1se <- which(cvfitlm.coef.lamdbda.1se[,"Coefficient"] != 0)
-#names.important.vars.lambda.1se <- x_coef_colnames[coef.indices.lambda.1se]
-#coefs.important.vars.lambda.1se <- cvfitlm.coef.lamdbda.1se[coef.indices.lambda.1se,2]
-#cvfitlm.coef.lambda.1se <- cbind(names.important.vars.lambda.1se, coefs.important.vars.lambda.1se)
-#colnames(cvfitlm.coef.lambda.1se) <- c("Names", "Coefficients")
-#kable(cvfitlm.coef.lambda.1se, caption="Variables in the Lambda 1se Model")
+try(coef.indices.lambda.1se <- which(cvfitlm.coef.lamdbda.1se[,"Coefficient"] != 0))
 
+try(if(coef.indices.lambda.1se > 1) {
+  names.important.vars.lambda.1se <- x_coef_colnames[coef.indices.lambda.1se]
+  coefs.important.vars.lambda.1se <- cvfitlm.coef.lamdbda.1se[coef.indices.lambda.1se,2]
+  cvfitlm.coef.lambda.1se <- cbind(names.important.vars.lambda.1se, coefs.important.vars.lambda.1se)
+  colnames(cvfitlm.coef.lambda.1se) <- c("Names", "Coefficients")
+  kable(cvfitlm.coef.lambda.1se, caption="Variables in the Lambda 1se Model")
+} else {print("No variables other than the intercept are significant leading indicators.")})
 
 ```
 In some cases, we may not have enough lag periods for a given predictor variable to equal the number of periods we would like to forecast.  In that case, we would need to project the trend of the predictor variable to include in the forecast model.  The Holt Winters Filter is a good algorithm for projecting trends.  In this section, we will use the HoltWinters function in R to forecast the variables that have non-zero coefficients in the glmnet model.
