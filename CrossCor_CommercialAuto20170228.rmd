@@ -21,7 +21,6 @@ rm(list=ls())
 #install.packages("fread")
 #install.packages("curl")
 
-
 ##Load Packages
 library(Hmisc)
 library(devtools)
@@ -40,15 +39,15 @@ library(curl) #for downloand data from a url
 
 
 ##Get Cellular Phone Use in US
-indep.var <- Quandl("UICT/CELL_USA", api_key="DJGcfzQc5RYP1JSycMBv", api_key="DJGcfzQc5RYP1JSycMBv", collapse="annual")
-str(indep.var)
-indep.var2 <- indep.var[nrow(indep.var):1,] #reverse order to ascending...oldest at beginning
-str(indep.var2)
-x <- indep.var2$`Mobile-cellular telephone subscriptions per 100 inhabitants`
-x.dates <- indep.var2$Date
-(indep.var.max.year <- max(indep.var2$Date))
-(indep.var.min.year <- min(indep.var2$Date))
-(indep.var.total.years <- as.numeric((indep.var.max.year - indep.var.min.year) / 365))
+#indep.var <- Quandl("UICT/CELL_USA", api_key="DJGcfzQc5RYP1JSycMBv", collapse="annual")
+#str(indep.var)
+#indep.var2 <- indep.var[nrow(indep.var):1,] #reverse order to ascending...oldest at beginning
+#str(indep.var2)
+#x <- indep.var2$`Mobile-cellular telephone subscriptions per 100 inhabitants`
+#x.dates <- indep.var2$Date
+#(indep.var.max.year <- max(indep.var2$Date))
+#(indep.var.min.year <- min(indep.var2$Date))
+#(indep.var.total.years <- as.numeric((indep.var.max.year - indep.var.min.year) / 365))
 
 ##Get Producer Price Index by Commodity for Fuels and Related Products and Power: No. 2 Diesel Fuel
 #indep.var <- Quandl("FRED/WPU05730302", api_key="DJGcfzQc5RYP1JSycMBv", collapse="annual")
@@ -62,26 +61,34 @@ x.dates <- indep.var2$Date
 ############################################################
 ##Dependent Variable
 
-##Traffic crashes, traffic crash fatalities, and alcohol-related traffic crash fatalities in the United States
-#dep.var <- Quandl("NIAAA/CRASHES_ALCOHOL", api_key="DJGcfzQc5RYP1JSycMBv", collapse="annual")
+crashes <- read.csv("iihs_crashes.csv")
+y <- dep.var <- crashes$Crashes
+y <- as.numeric(y)
+y.dates <- crashes$Year
+(dep.var.max.year <- max(y.dates))
+(dep.var.min.year <- min(y.dates))
+(dep.var.total.years <- as.numeric((dep.var.max.year - dep.var.min.year)))
+
+##Get Persons Killed in Crashes Involving a Large Truck, by Person Type and Crash Type, 1994 - 2013 - State : USA
+#dep.var <- Quandl("NHTSA/FTR_LTR_PK_US", api_key="DJGcfzQc5RYP1JSycMBv", collapse="annual")
 #str(dep.var)
 #dep.var2 <- dep.var[nrow(dep.var):1,] #reverse order to ascending...oldest at beginning
-#y <- dep.var2$`Traffic Crashes`
+#str(dep.var2)
+#y <- dep.var2$`Multiple--Vehicle`
+#y.dates <- dep.var2$Year
 #(dep.var.max.year <- max(dep.var2$Year))
 #(dep.var.min.year <- min(dep.var2$Year))
 #(dep.var.total.years <- as.numeric((dep.var.max.year - dep.var.min.year) / 365))
 
-##Get Persons Killed in Crashes Involving a Large Truck, by Person Type and Crash Type, 1994 - 2013 - State : USA
-dep.var <- Quandl("NHTSA/FTR_LTR_PK_US", api_key="DJGcfzQc5RYP1JSycMBv", collapse="annual")
-#str(dep.var)
-dep.var2 <- dep.var[nrow(dep.var):1,] #reverse order to ascending...oldest at beginning
-#str(dep.var2)
-y <- dep.var2$`Multiple--Vehicle`
-y.dates <- dep.var2$Year
-(dep.var.max.year <- max(dep.var2$Year))
-(dep.var.min.year <- min(dep.var2$Year))
-(dep.var.total.years <- as.numeric((dep.var.max.year - dep.var.min.year) / 365))
-
+##Get OPEC Oil Prices
+#?Quandl
+indep.var <- Quandl("OPEC/ORB", api_key="DJGcfzQc5RYP1JSycMBv", collapse="annual", order="asc")
+x <- indep.var$Value
+#str(indep.var)
+x.dates <- indep.var$Date
+(indep.var.max.year <- max(x.dates))
+(indep.var.min.year <- min(x.dates))
+(indep.var.total.years <- as.numeric((indep.var.max.year - indep.var.min.year) / 365))
 
 ##Get Producer Price Index by Industry: Premiums for Property and Casualty Insurance: Premiums for Commercial Auto Insurance
 #dep.var <- Quandl("FRED/PCU9241269241263", api_key="DJGcfzQc5RYP1JSycMBv", collapse="annual")
