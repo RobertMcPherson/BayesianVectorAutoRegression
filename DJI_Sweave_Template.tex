@@ -1,0 +1,127 @@
+\documentclass[12pt]{article}         % the type of document and font size (default 10pt)
+\usepackage[margin=1.0in]{geometry}   % sets all margins to 1in, can be changed
+\usepackage{moreverb}                 % for verbatimtabinput -- LaTeX environment
+\usepackage{url}                      % for \url{} command
+\usepackage{amssymb}                  % for many mathematical symbols
+\usepackage[pdftex]{lscape}           % for landscaped tables
+\usepackage{longtable}                % for tables that break over multiple pages
+\title{Demographic and Economic Leading Indicators}  % to specify title
+\author{Bob McPherson}          % to specify author(s)
+\usepackage{Sweave}
+\begin{document}                      % document begins here
+\input{DJI_Sweave_Template-concordance}
+
+% If .nw file contains graphs: To specify that EPS/PDF graph files are to be 
+% saved to 'graphics' sub-folder
+%     NOTE: 'graphics' sub-folder must exist prior to Sweave step
+%\SweaveOpts{prefix.string=graphics/plot}
+
+% If .nw file contains graphs: to modify (shrink/enlarge} size of graphics 
+% file inserted
+%         NOTE: can be specified/modified before any graph chunk
+\setkeys{Gin}{width=1.0\textwidth}
+
+\maketitle              % makes the title
+%\tableofcontents        % inserts TOC (section, sub-section, etc numbers and titles)
+%\listoftables           % inserts LOT (numbers and captions)
+%\listoffigures          % inserts LOF (numbers and captions)
+%                        %     NOTE: graph chunk must be wrapped with \begin{figure}, 
+%                        %  \end{figure}, and \caption{}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Where everything else goes
+
+\section{How to typeset \textsf{R} code}
+
+If you want to see both the input and output, do this:
+
+\begin{Schunk}
+\begin{Sinput}
+> runif(10)
+\end{Sinput}
+\begin{Soutput}
+ [1] 0.87640976 0.75944848 0.68631318 0.47581328 0.04821688 0.08480474
+ [7] 0.02774285 0.76877110 0.19790805 0.57814911
+\end{Soutput}
+\end{Schunk}
+
+If you want to see output, but no input, do this:
+
+\begin{Schunk}
+\begin{Soutput}
+ [1] 0.2817267787 0.1075962023 0.1494490174 0.4508275751 0.3554472025
+ [6] 0.0009781977 0.6655434514 0.9622834574 0.7886318574 0.6234380030
+\end{Soutput}
+\end{Schunk}
+
+If you want to see input, but no output, do this:
+
+\begin{Schunk}
+\begin{Sinput}
+> runif(13)
+\end{Sinput}
+\end{Schunk}
+
+If you want to run some \textsf{R} code but hide the input/output from the reader then you can do both at the same time:
+
+
+\bigskip   % leave some empty space (optional)
+
+and you can double-check that it worked later (if you like)
+
+\begin{Schunk}
+\begin{Sinput}
+> x  # use keep.source=TRUE if you want comments printed
+\end{Sinput}
+\begin{Soutput}
+ [1]  2  3  4  5  6  7  8  9 10 11
+\end{Soutput}
+\begin{Sinput}
+> y
+\end{Sinput}
+\begin{Soutput}
+ [1] 0.21601262 0.08723895 0.97032938 0.24798698 0.89185310 0.17696276
+ [7] 0.09052184 0.79005603 0.89647824 0.54800134
+\end{Soutput}
+\end{Schunk}
+
+If you want to write some \textsf{R} code but not have it evaluated at all then do this:
+
+\begin{Schunk}
+\begin{Sinput}
+> # whatever you write here must be syntactically correct R code
+> runif(1000000000000000000000000)
+\end{Sinput}
+\end{Schunk}
+
+If you would like to include a figure that's generated completely by \textsf{R} code, then you can do something like the following.
+
+\begin{figure}
+\includegraphics{DJI_Sweave_Template-007}
+\caption{Here is the plot we made}
+\end{figure}
+
+
+Sometimes we would like the output to look like \LaTeX\ output instead of \textsf{R} output.  In that case, do the following.
+
+\begin{Schunk}
+\begin{Sinput}
+> library(xtable)
+> xtable(summary(lm(y ~ x)), caption = "Here is the table we made")
+\end{Sinput}
+% latex table generated in R 3.5.1 by xtable 1.8-2 package
+% Tue Aug 21 00:19:27 2018
+\begin{table}[ht]
+\centering
+\begin{tabular}{rrrrr}
+  \hline
+ & Estimate & Std. Error & t value & Pr($>$$|$t$|$) \\ 
+  \hline
+(Intercept) & 0.2330 & 0.2866 & 0.81 & 0.4399 \\ 
+  x & 0.0398 & 0.0403 & 0.99 & 0.3529 \\ 
+   \hline
+\end{tabular}
+\caption{Here is the table we made} 
+\end{table}\end{Schunk}
+
+
+\end{document}
