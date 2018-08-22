@@ -10,7 +10,20 @@
 #install.packages("h2o")
 #install.packages("addendum")
 #install.packages("testthat")
+#install.packages("imputateTS")
+#install.packages("BigVAR")
+#install.packages("reshape")
+#install.packages("ggplot2")
+#install.packages("Quandl")
+#install.packages("knitr")
 #devtools::use_testthat
+#library(devtools)
+#install.packages("devtools")
+#install_github("SteffenMoritz/imputeTS")
+#install_github("gabrielrvsc/HDeconometrics")
+#install.packages("HDeconometrics")
+#install.packages("githubinstall")
+#install.packages("quantmod")
 
 rm(list=ls())
 
@@ -28,7 +41,10 @@ library(orderedLasso)
 library(reshape)
 library(ggplot2)
 library(Quandl)
-
+library(HDeconometrics)
+library(imputeTS)
+library(quantmod)
+library(xts)
 
 ## ----set_globals---------------------------------------------------------
 
@@ -38,13 +54,13 @@ library(Quandl)
 
 ##########################
 #Input the column name of the dependent variable to predict.
-dependent.variable <- "CPI"
+dependent.variable <- "DJI.Chg"
 ##########################
 
 ##########################
 #Set the maximum lag for adjusting the variables in the data.
 #each variable will get a new column for each lag, up to the maximum set here.
-maxlag <- 12
+maxlag <- 30
 ##########################
 
 ##########################
@@ -99,27 +115,6 @@ m1Velocity <- Quandl("FRED/M1V", api_key="DJGcfzQc5RYP1JSycMBv",collapse="annual
 
 m2Velocity <- Quandl("FRED/M2V", api_key="DJGcfzQc5RYP1JSycMBv", collapse="annual", start_date="1960-12-31", end_date="2017-12-31", type="raw", order="asc", force_irregular=TRUE)
 
-#head(CPI)
-#head(shortTermDebtToLongTerm)
-#head(debtToGDP)
-#head(GDP)
-#head(m1Velocity)
-#head(m2Velocity)
-
-#tail(CPI)
-#tail(shortTermDebtToLongTerm)
-#tail(debtToGDP)
-#tail(GDP)
-#tail(m1Velocity)
-#tail(m2Velocity)
-
-#str(CPI)
-#str(shortTermDebtToLongTerm)
-#str(debtToGDP)
-#str(GDP)
-#str(m1Velocity)
-#str(m2Velocity)
-
 raw.ts <- cbind(m1Velocity, m2Velocity, GDP[-1,], debtToGDP[-1,], shortTermDebtToLongTerm[-1,], CPI[-1,])
 
 raw.ts <- cbind(m1Velocity, m2Velocity, GDP[-1,], debtToGDP[-1,], shortTermDebtToLongTerm[-1,], CPI[-1,])
@@ -135,9 +130,57 @@ data <- raw.ts[, !(names(raw.ts) %in% "Date")]
 
 colnames(data) <- c("CPI","shortTermDebtToLongTerm","debtToGDP","GDP","m1Velocity","m2Velocity")
 
-#head(data)
+##Import birth data
 
-SeriesData <- data
+births <- read.csv("BirthsModified.csv")
+#impute the na values
+births.interp <- na.interpolation(ts(births))
+births.export <- apply(births.interp, 2, rev)
+head(births.export)
+write.csv(births.export, "births_interp_no_blanks.csv")
+
+births.trunc <- births.interp[1:57,3:5]
+births.2009 <- apply(births.trunc, 2, rev)
+head(births.2009)
+
+#na.interpolation(ts(births.trunc[,2]))
+#births.interp <- apply(births.trunc, 2, na.interpolation)
+#colnames(births.interp) <- c("Year", "Births", "BirthRate")
+#head(births.interp)
+
+#head(data)
+#str(data)
+#?rev
+#births.2009 <- apply(births.interp[], 2, rev)
+
+#################################
+##Not included - series too short
+##Get SPX data
+SPX <- getSymbols("^GSPC",auto.assign = FALSE)
+?getSymbols
+
+SPX.xts <- as.xts(SPX)
+SPX.yearly <- to.yearly(SPX.xts)
+
+#getSymbols("DJI", src = "yahoo", from = start_date, to = end_date)
+DJI <- getSymbols("DJI", src = "yahoo")
+DJI.xts <- as.xts(DJI)
+DJI.interp <- na.interpolation(DJI.xts)
+DJI.yearly <- to.yearly(DJI.interp)
+#################################
+
+
+##Import historical Dow Jones Industrial Average data
+Dow <- read.csv("DJI_Historical_Chg_Data.csv")
+head(Dow)
+Dow.interp <- na.interpolation(Dow)
+DJI.Chg <- Dow[1:57,2]
+
+SeriesData <- cbind(births.2009, data, DJI.Chg)
+SeriesData <- SeriesData[,-1] #remove the "Year" column
+head(SeriesData)
+
+col.names <- colnames(SeriesData)
 
 x <- SeriesData[, !(names(SeriesData) %in% dependent.variable)]
 head(x)
@@ -147,6 +190,7 @@ x.scaled <- scale(x)
 
 #Isolate dependent variable values, based on name given in global variable inputs above
 y <- SeriesData[,dependent.variable]
+y.unscaled <- y
 
 #scale the dependent variable
 y.scaled <- scale(y)
@@ -168,8 +212,8 @@ for (i in 1:num.cols){
   fit <- auto.arima(x.scaled[,i])
   pdf(file=paste("plots/arima_",x.colnames[i],".pdf",sep=""))
   if(include.arima.plots == TRUE){
-     par(mar=c(8,4,2,2))
-     plot(forecast(fit,h=maxlag), sub=paste(x.colnames[i]))
+    par(mar=c(8,4,2,2))
+    plot(forecast(fit,h=maxlag), sub=paste(x.colnames[i]))
   }
   dev.off()
   #assemble a table of ARIMA residuals for use in cross-correlation analysis
@@ -189,14 +233,14 @@ y.arima.residuals <- resid(fit)
 
 ## ------------------------------------------------------------------------
 if(include.QQ.plots == TRUE){
-#check distributions of independent variables for normality
+  #check distributions of independent variables for normality
   for (i in 1:length(x.scaled[1,])){
     pdf(file=paste("plots/qqnorm_",x.colnames[i],".pdf",sep=""))
     qqnorm(x.arima.residuals[,i], main=paste(x.colnames[i]))
     dev.off()
   }
-
-
+  
+  
   #check dependent variable for normality
   pdf(file=paste("plots/qqnorm_",dependent.variable,".pdf",sep=""))
   qqnorm(y.arima.residuals, main=paste(dependent.variable,sep=""))
@@ -212,12 +256,12 @@ if(include.QQ.plots == TRUE){
 #note: analysis is run on ARIMA residuals so as to pre-whiten the data
 #i=1
 dir.create("plots")
- if(include.cross.correlation.plots == TRUE){
-    for (i in 1:length(x[1,])){
+if(include.cross.correlation.plots == TRUE){
+  for (i in 1:length(x[1,])){
     pdf(file=paste("plots/ccf_",x.colnames[i],".pdf",sep=""))
     par(mar=c(5,7,4,2)) #set the margins so title does not get cut off
     ccf(x.arima.residuals[,i], y.arima.residuals, plot=TRUE, main=paste(x.colnames[i]), na.action = na.contiguous)
-   dev.off()
+    dev.off()
   }
 }
 
@@ -232,8 +276,10 @@ dir.create("plots")
 
 #x2 <- subset(x, select= -c(X.Dividends, X.From.the.rest.of.the.world.6.))
 
-Y <- cbind.data.frame(x, "CPI" = y)
-nms <- colnames(Y)
+
+Y <- cbind.data.frame(x, y)
+colnames(Y) <- col.names
+nms <- dependent.variable
 Y <- as.matrix(Y)
 
 # Fit a Basic VAR-L(3,4) on simulated data
@@ -266,8 +312,12 @@ T2=floor(2*nrow(Y)/3)
 #The above, BigVAR package will not handle data sets this wide.  Trying the
 #Bayesian Vector Auto Regression (BVAR) algorithm
 
+###################################
+##Perform analysis on pre-whitened data
+
 # = load package and data = #
-library(HDeconometrics)
+#install.packages("HDeconometrics")
+#library(HDeconometrics)
 #data("voldata")
 
 # = Break data into in and out of sample to test model accuracy= #
@@ -282,14 +332,15 @@ Yout = Y[(T2+1):(T1+T2),]
 #predols=predict(modelols,h=2)
 
 # = BVAR = #
-modelbvar=lbvar(Yin, p = 2, delta = 0.5)
-predbvar=predict(modelbvar,h=2)
+#?lbvar
+#?predict
+modelbvar=lbvar(Yin, p = 5, delta = 0.5)
+predbvar=predict(modelbvar,h=5)
 
 # = Forecasts of the volatility = #
-#?tail
-k="CPI"
+k=paste(dependent.variable)
 pdf(file=paste("plots/forecast.pdf",sep=""))
-plot(c(Y[,k],predbvar[,k]),type="l", main="CPI Forecast")
+plot(c(Y[,k],predbvar[,k]),type="l", main=paste(dependent.variable))
 #lines(c(rep(NA,length(Y[,k])),predols[,k]))
 lines(c(rep(NA,length(Y[,k])),predbvar[,k]))
 abline(v=length(Y[,k]),lty=2,col=4)
@@ -316,6 +367,76 @@ dev.off()
 #barplot(R,col=rainbow(30),cex.names = 0.3, main = "Most Influenced")
 
 pdf(file=paste("plots/barchart.pdf",sep=""))
+aux=modelbvar$coef.by.block
+impacts=abs(Reduce("+", aux ))
+diag(impacts)=0
+I=colSums(impacts)
+R=rowSums(impacts)
+par(mfrow=c(2,1))
+barplot(I,col=rainbow(30),cex.names = 0.3, main = "Most Influent")
+barplot(R,col=rainbow(30),cex.names = 0.3, main = "Most Influenced")
+dev.off()
+
+###################################
+##Perform analysis on NON pre-whitened data
+
+Y <- cbind.data.frame(x.scaled, y.unscaled)
+colnames(Y) <- col.names
+head(Y)
+nms <- dependent.variable
+Y <- as.matrix(Y)
+
+# Fit a Basic VAR-L(3,4) on simulated data
+T1=floor(nrow(Y)/3)
+T2=floor(2*nrow(Y)/3)
+
+
+
+# = Break data into in and out of sample to test model accuracy= #
+Yin = Y[1:T2,]
+Yout = Y[(T2+1):(T1+T2),]
+
+# = Run models = #
+# = OLS = #
+#modelols=HDvar(Yin,p=2) # takes a while to run
+#predols=predict(modelols,h=2)
+
+# = BVAR = #
+#?lbvar
+#?predict
+modelbvar=lbvar(Yin, p = 5, delta = 0.5)
+predbvar=predict(modelbvar,h=5)
+
+# = Forecasts of the volatility = #
+k=paste(dependent.variable)
+pdf(file=paste("plots/forecast_not_whitened.pdf",sep=""))
+plot(c(Y[,k],predbvar[,k]),type="l", main=paste(dependent.variable, "Not Whitened"))
+#lines(c(rep(NA,length(Y[,k])),predols[,k]))
+lines(c(rep(NA,length(Y[,k])),predbvar[,k]))
+abline(v=length(Y[,k]),lty=2,col=4)
+#legend("topleft",legend="BVAR",col=2,lty=1,lwd=1,seg.len=1,cex=1,bty="n")
+dev.off()
+
+# = Overall percentual error = #
+#MAPEols=abs((Yout-predols)/Yout)*100
+#MAPEbvar=abs((Yout-predbvar)/Yout)*100
+#matplot(MAPEols,type="l",ylim=c(0,80),main="Overall % error",col="lightsalmon",ylab="Error %")
+#aux=apply(MAPEbvar,2,lines,col="lightskyblue1")
+#lines(rowMeans(MAPEols),lwd=3,col=2,type="b")
+#lines(rowMeans(MAPEbvar),lwd=3,col=4,type="b")
+#legend("topleft",legend=c("OLS","BVAR"),col=c(2,4),lty=1,lwd=1,seg.len=1,cex=1,bty="n")
+
+# = Influences = #
+#aux=modelbvar$coef.by.block[2:23]
+#impacts=abs(Reduce("+", aux ))
+#diag(impacts)=0
+#I=colSums(impacts)
+#R=rowSums(impacts)
+#par(mfrow=c(2,1))
+#barplot(I,col=rainbow(30),cex.names = 0.3, main = "Most Influent")
+#barplot(R,col=rainbow(30),cex.names = 0.3, main = "Most Influenced")
+
+pdf(file=paste("plots/barchart_not_whitened.pdf",sep=""))
 aux=modelbvar$coef.by.block
 impacts=abs(Reduce("+", aux ))
 diag(impacts)=0
