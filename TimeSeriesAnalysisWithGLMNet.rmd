@@ -1,0 +1,517 @@
+
+
+---
+title: "Gemini Time Series Analysis"
+output:
+  html_document: default
+  html_notebook: default
+  pdf_document: default
+  word_document: default
+---
+
+This analysis examines changes in Gemini's book of business over time, and searches for leading indicators of losses.
+
+
+```{r install_libraries, echo=FALSE, results='hide', message=FALSE, warning=FALSE}
+#install.packages("sqldf")
+#install.packages("dummies")
+#install.packages("forecast")
+#install.packages("orderedLasso")
+#install.packages("glmnet")
+#install.packages("h2o")
+#install.packages("addendum")
+#install.packages("testthat")
+#devtools::use_testthat
+
+rm(list=ls())
+
+library(sqldf) #for running sql on data frames
+library(dummies) #for creating one-hot encoding
+library(forecast) #for the Holt-Winters forecast filter
+#library(orderedLasso)
+library(glmnet) #for running regularized GLM
+#library(h2o)
+library(knitr) #for reproducible research, i.e., Markdown
+library(testthat)
+#?testthat
+
+```
+
+Select global settings for this analysis.  These include choosing the dependent variable, and offset variable, if any, and the time increment variable (i.e., years, or month/year).
+
+
+```{r set_globals, message=FALSE, warning=FALSE}
+##########################
+##Input Global Variables##
+##########################
+
+##########################
+#Input the column name of the dependent variable to predict.
+dependent.variable <- "Claim.Transaction.Count"
+#dependent.variable <- "WP"
+##########################
+
+##########################
+#Set the maximum lag for adjusting the variables in the data.
+#each variable will get a new column for each lag, up to the maximum set here.
+maxlag <- 2
+##########################
+
+##########################
+#Type 'TRUE' if you want to include an offset in the GLM calculation, FALSE otherwise.
+include.offset <- FALSE
+##########################
+
+##########################
+#Type the column name of the variable you would like to use as an offset, if any.
+offset.variable <- "Unit.Count"
+##########################
+
+##########################
+#Input the column name that has the time increments in it, such as years, or year/months.
+time.increment.variable <- "EffYear"
+##########################
+
+##########################
+#Select whether to include plots with the arima, pre-whitening step
+include.arima.plots <- FALSE
+##########################
+
+##########################
+#Select whether to include cross correlation plots
+include.cross.correlation.plots <- FALSE
+##########################
+
+##########################
+#Select whether to include quartile to quartile (QQ) plots
+include.QQ.plots <- FALSE
+##########################
+
+#####Insert data here#####
+
+
+#fix column names to have proper name syntax
+tidy.colnames <- make.names(colnames(SeriesData), unique=TRUE)
+colnames(SeriesData) <- tidy.colnames
+
+
+#scale the dependent variable
+y.scaled <- scale(y)
+
+#Isolate dependent variable values, based on name given in global variable inputs above
+offset.p <- SeriesData[,offset.variable]
+rownames(SeriesData)
+
+offset.p.scaled <- scale(offset.p)
+
+#save time increment vector
+time.increments <- unique(raw_data_dummies[,time.increment.variable])
+time.increments <- time.increments[sort.list(time.increments, decreasing=FALSE)]
+
+#save column names
+x.colnames <- data.frame(colnames(x))
+
+
+```
+##ARIMA Time Series Analysis
+
+Apply a function for automatically running ARIMA diagnostics on each data element, and produce an ARIMA forecast.  The forecasts are just run to see if there are any trends that can be predicted from the ARIMA analysis.  In this case, we see that most of the data are already pretty well behaved from an ARIMA standpoint, as nearly all of the plots show "(0,0,0), which corresponds to the autoregressive compenent, the integration component, and the moving average components all being equal to zero (i.e., AR=0, I=0, and MA=0).
+
+```{r}
+#i=20
+num.cols <- length(x[1,])
+#apply(x,1,function(x) sum(is.na(x)))
+#str(x)
+#?auto.arima
+#generate ARIMA plots...intent is to get ARIMA parameters, rather than forecasts
+x.arima.residuals = NULL
+for (i in 1:num.cols){
+  fit <- auto.arima(x.scaled[,i])
+  if(include.arima.plots == TRUE){
+  par(mar=c(8,4,2,2))
+  plot(forecast(fit,h=maxlag), sub=paste(x.colnames[i,]))
+  }
+
+  #assemble a table of ARIMA residuals for use in cross-correlation analysis
+  temp.resid <- resid(fit)
+  x.arima.residuals <- as.matrix(cbind(x.arima.residuals, temp.resid))
+}
+
+#run arima transformation on the dependent variable
+fit=NULL
+fit <- auto.arima(y.scaled)
+par(mar=c(8,4,2,2))
+plot(forecast(fit,h=1), sub=paste(dependent.variable, sep=""))
+y.arima.residuals <- resid(fit)
+
+#run arima transformation on the offset variable
+fit=NULL
+fit <- auto.arima(offset.p.scaled)
+par(mar=c(8,4,2,2))
+plot(forecast(fit,h=1), sub=paste(offset.variable,sep=""))
+offset.arima.residuals <- resid(fit)
+
+#create a standardized, scaled, and normalized version of the data
+#?scale
+#glm
+
+
+```
+
+
+
+```{r}
+if(include.QQ.plots == TRUE){
+#check distributions of independent variables for normality
+  for (i in 1:length(x.scaled[1,])){
+    qqnorm(x.arima.residuals[,i], main=paste(x.colnames[i,]))
+  }
+}  
+
+#check dependent variable for normality
+#qqnorm(y.arima.residuals, main=paste(dependent.variable,sep=""))
+
+#check offset variable for normality
+#qqnorm(offset.arima.residuals, main=paste(offset.variable,sep=""))
+
+```
+
+##Cross Correlation Analysis
+
+This step is to perform cross correlation analysis to see the effects of all the lags on the correlation.  The longest bar in the plot that extends above the dotted confidence interval line indicates the best lag.  In this data set, all of the best lags are indicated at zero.  In other words, if there is any relationship between the predictor variables and the target variable, claims in this case, the impact occurs within the year.  The results here echo the findings of the GLMNet regularized regression, which only selected predictor variables that had a zero lag.
+
+```{r}
+
+##cross correlation analysis
+#leading indicators in 'x' will have negative lag values for the most significant
+#correlations in the chart.
+#note: analysis is run on ARIMA residuals so as to pre-whiten the data
+if(include.cross.correlation.plots == TRUE){
+  for (i in 1:length(x[1,])){
+    par(mar=c(5,7,4,2)) #set the margins so title does not get cut off
+    ccf(x.arima.residuals[,i], y.arima.residuals, plot=TRUE, main=paste(x.colnames[i,]), na.action = na.contiguous)
+  }
+}  
+
+if(include.offset == TRUE){
+#cross correlation analysis on the offset variable, and save maximum lag in "offset.lag"
+par(mar=c(5,7,4,2)) #set the margins so title does not get cut off
+ccf.offset <- ccf(offset.arima.residuals, y, plot=TRUE, main=paste(offset.variable), na.action = na.contiguous)
+offset.lag <- ccf.offset$lag[which.max(abs(ccf.offset$acf))]
+#offset.p <- ts(offset.p) #make a time series
+
+ #lag the offset with pre-whitening
+try(if(offset.lag > 0) stop("Note: The offset is not a leading variable, but is a lagging variable.  The selected variable cannot be used as an offset.", call. = FALSE))
+lag.index <- length(offset.arima.residuals) + offset.lag #note: the lag index must be negative
+str(lag.index)
+lagged.offset.whitened <- as.vector(offset.arima.residuals)[1:lag.index] #lag the offset
+lagged.offset.whitened <- lagged.offset.whitened[!is.na(lagged.offset.whitened)]
+
+#lag the offset without pre-whitening
+try(if(offset.lag > 0) stop("Note: The offset is not a leading variable, but is a lagging variable.  The selected variable cannot be used as an offset.", call. = FALSE))
+lag.index <- length(offset.p) + offset.lag #note: the lag index must be negative
+str(lag.index)
+lagged.offset <- as.vector(offset.arima.residuals)[1:lag.index] #lag the offset
+lagged.offset <- lagged.offset[!is.na(lagged.offset)]
+}
+
+```
+
+
+
+
+##Create an Analytical Dataset of Lagged Variables
+
+Create new columns to add to the dataset to correspond with the lags that we want represented for each variable.  We select a maximum lag as well.  There are only nine years of data, so we will set a maximum lag of 3  This will allow for six rows of data to be modeled.
+
+```{r}
+
+#Reverse the order of the variables, as lags are calculated in the functions below assuming that the input data is in ascending order, with the most recent values at the top rows of the matrix, or lefmost position in a vector.
+x <- apply(x, 2, rev)
+
+y <- rev(y)
+
+x.arima.residuals <- apply(x, 2, rev)
+
+y.arima.residuals <- rev(y.arima.residuals)
+
+if(include.offset == TRUE){
+lagged.offset.whitened <- rev(lagged.offset.whitened)
+lagged.offset <- rev(lagged.offset)
+}
+
+time.increments <- rev(time.increments)
+
+#function to add time lags to the predictor variables in a new matrix
+time_lag_matrix2 <- function (x, maxlag) {
+    p = ncol(x)
+    N = nrow(x) - maxlag - 1
+#    x_new_num_col = maxlag * p + p #as a check
+    x_new = NULL
+    for (j in 1:p) {
+      for (i in 1:(maxlag + 1)) {
+        x_temp = x[(i):(N + i), j]
+        x_new = cbind(x_new,as.vector(x_temp))
+      }
+    }
+    return(x_new)
+}
+
+#function to create lagged prediction set, and extending it
+#using Holt Winters forecast
+#i=2
+#j=3
+forecast_matrix <- function (x, maxlag)
+{
+    p = ncol(x)
+    N = nrow(x) - maxlag - 1
+    x_new = NULL
+    for (j in 1:p) {
+      hw <- HoltWinters(x[,j], gamma=FALSE, beta=TRUE)
+      hw.predict <- predict(hw, n.ahead=maxlag)
+      x.forecast <- as.vector(c(hw.predict, x[,j]))
+      for (i in 1:(maxlag + 1)) {
+        x_temp = x.forecast[i:((maxlag + i) - 1)]
+        x_new = as.matrix(cbind(x_new,as.vector(x_temp)))
+      }
+    }
+    return(x_new)
+}
+#?ets
+
+#function to create new column headers for the matrix of lagged variables
+#j=1
+time_lag_colnames <- function (x, maxlag) {
+    p = ncol(x)
+    N = nrow(x) - maxlag - 1
+    x.colnames <- colnames(x)
+    x_new_names = NULL
+    for (j in 1:p) {
+      for (i in 1:(maxlag + 1)) {
+        x_new_names_temp = rbind(paste(x.colnames[j], "_lead", i-1, sep=""))
+        x_new_names <- rbind(x_new_names,x_new_names_temp)
+      }
+    }
+    return(x_new_names)
+}
+
+#generate the lagged matrix
+x_new <- time_lag_matrix2(as.matrix(x), maxlag) #untransformed data for forecasting
+x_new_whitened <- time_lag_matrix2(as.matrix(x.arima.residuals), maxlag) #transformed data for diagnostics...NOT for forecasting
+
+#generate forecast set
+forecast.set <- forecast_matrix(x, maxlag)
+
+#calculate length of new 'x' variable set
+x_new.length <- length(x_new[,1])
+
+#adjust the target variable to match the reduced length of the lagged predictor variables
+y_new <- as.vector(y[1:x_new.length])
+y_new_whitened <- as.vector(y.arima.residuals[1:x_new.length])
+y_new_whitened <- scale(y_new_whitened) #scale for comparability of beta values
+
+#generate the new column names for the new lagged matrix
+x_new_colnames <- time_lag_colnames(x, maxlag)
+
+#export forecast set
+colnames(forecast.set) <- x_new_colnames
+write.csv(file="ForecastSet.csv", x=forecast.set)
+
+if(include.offset == TRUE){
+#shorten offset to new length, if necessary
+lagged.offset.whitened <- lagged.offset.whitened[1:x_new.length]
+lagged.offset <- lagged.offset[1:x_new.length]
+}
+
+#shorten time increment list (for row names) to new length
+time.increments <- time.increments[1:length(y_new)]
+
+```
+##Regularized Regression
+
+Now that we have our matrix of lagged variables, we will run a regularized regression in the form of an elastic net, using the glmnet function.  An elastic net allows for combining the variable selection benefits of LASSO regression, with the capability of avoiding degree of freedom issues with micro arrays that a ridge regression affords.  In other words, we are able to analyze a data set that has many more columns of variables than there are rows of observations...years in this case.  With traditional regression methods, this would not be possible.  The elastic net regularization method is selected by setting the alpha parameter in the glmnet function to a number between 0 and 1.  This essentially determines the blend between a ridge and a LASSO regression, with 0 being a full ridge regression, and a 1 being a full LASSO regression.
+
+The first model, appearing below, is run with pre-whitened data.  That is, the model is run on the residuals after backing out any seasonality, trend, etc., as detected by the auto.arima function in R. The model in pre-whitened data is not suitablel for forecasting, but could serve as a check on variable selection.  A subsequent model was run on non-prewhitened data for forecasting purposes.
+
+```{r prewhitened_model}
+
+####cross validated models on pre-whitened data for diagnostic purposes
+#with offset
+if(include.offset == TRUE){
+  cvfitlm.prewhitened <- cv.glmnet(x = x_new_whitened,  y = y_new_whitened, offset=lagged.offset.whitened, family = "gaussian", alpha = 0.5)
+}
+
+#without offset
+if(include.offset == FALSE){
+  cvfitlm.prewhitened <- cv.glmnet(x = x_new_whitened,  y = y_new_whitened, family = "gaussian", alpha = 0.5)
+}
+
+#view the cross validation curve with upper and lower standard deviations
+plot(cvfitlm.prewhitened)
+
+#get the coefficients
+cvfitlm.coef.lambda.1se.prewhitened <- coef(cvfitlm.prewhitened, s = "lambda.1se")
+
+#add the column names to the coefficient list
+#first, must add a row for the y-intercept value in the column names list
+x_coef_colnames <- rbind("Intercept",x_new_colnames)
+
+#join the variable names with the coeficients
+cvfitlm.coef.lambda.1se.prewhitened <- cbind(x_coef_colnames, as.vector(cvfitlm.coef.lambda.1se.prewhitened))
+colnames(cvfitlm.coef.lambda.1se.prewhitened) <- c("Variable","Coefficient")
+kable(cvfitlm.coef.lambda.1se.prewhitened, caption="Coefficients on Pre-Whitened Time Series Data")
+cvfitlm_coef_lamdbda_1se_prewhitened <- data.frame(cvfitlm.coef.lambda.1se.prewhitened)
+sorted.coefficients.prewhitened <- sqldf("select * from cvfitlm_coef_lamdbda_1se_prewhitened where Coefficient != 0 order by Coefficient DESC") 
+kable(sorted.coefficients.prewhitened, caption="Coefficients on pre-whitened, scaled data, sorted by coefficient size")
+
+
+#use the model results from the pre-whitened data to select the variables to use in the forecast
+coef.indices.lambda.1se.prewhitened <- which(cvfitlm.coef.lambda.1se.prewhitened[,"Coefficient"] != 0)
+selected.indices <- coef.indices.lambda.1se.prewhitened[-1] #-1 is to omit the y-intercept variable
+x.selected <- x_new[,selected.indices]
+#x_new_colnames[selected.indices] #as a test
+
+```
+The following model is built on non-prewhitened data, so as to be suitable for forecasting.
+
+
+```{r nonprewitened_model}
+
+####cross validated models on actual data for forecasting purposes
+
+##NOTE: alpha parameter must be set at 0 in this section so as to retain the variables selected in the pre-whitening section.  An alpha of 0 is equivalent to a ridge regression, which retains all variables in the model.
+
+#with offset
+if(include.offset == TRUE){
+  cvfitlm <- cv.glmnet(x = x.selected,  y = y_new, offset = lagged.offset, family = "gaussian", alpha = 0)
+}
+
+#without offset
+if(include.offset == FALSE){
+#  forecast.fit <- glm(y_new ~ x.selected, family = "gaussian") 
+#  cvfitlm <- cv.glmnet(x = x.selected,  y = y_new, family = "gaussian", alpha = 0)
+  cvfitlm <- glmnet(x = x.selected,  y = y_new, family = "gaussian", alpha = 0)
+#?glmnet  
+}
+
+#view the cross validation curve with upper and lower standard deviations
+plot(cvfitlm)
+str(coef(cvfitlm))
+summary(cvfitlm)
+
+#get the coefficients at the lambda level that has the minimum
+#cross validated error
+#cvfitlm.coef.lambda.min <- coef(cvfitlm, s = "lambda.min")
+
+#add the column names to the coefficient list
+#first, must add a row for the y-intercept value in the column names list
+x_coef_colnames <- x_new_colnames[selected.indices]
+x_coef_colnames <- c("Intercept", x_coef_colnames)
+
+#for GLM experiment
+#summary(forecast.fit)
+#cbind(x_coef_colnames, forecast.fit$coefficients)
+
+#get the coefficients at the lambda level that has the most regularized model
+#such that error is within one estandard error of the minimum -- lambda 1se
+#cvfitlm.coef.lambda.1se <- coef(cvfitlm, s = "lambda.1se")
+#cvfitlm.coef.lamdbda.1se <- cbind(x_coef_colnames, as.vector(cvfitlm.coef.lambda.1se))
+#colnames(cvfitlm.coef.lamdbda.1se) <- c("Variable","Coefficient")
+#kable(cvfitlm.coef.lamdbda.1se, caption="Coefficients on Lambda 1se")
+
+#get the coefficients at the lambda level that has the most regularized model
+#such that error is within one estandard error of the minimum -- lambda 1se
+fitlm.coef.lambda.1se <- coef(cvfitlm, s = cvfitlm.prewhitened$lambda.1se)
+fitlm.coef.lamdbda.1se <- cbind(x_coef_colnames, as.vector(fitlm.coef.lambda.1se))
+colnames(fitlm.coef.lamdbda.1se) <- c("Variable","Coefficient")
+#kable(fitlm.coef.lamdbda.1se, caption="Coefficients on Lambda 1se")
+fitlm_coef_lamdbda_1se <- data.frame(fitlm.coef.lamdbda.1se)
+sorted.coefficients <- sqldf("select * from fitlm_coef_lamdbda_1se order by Coefficient DESC") 
+#kable(sorted.coefficients, caption="Coefficients on non pre-whitened, scaled data, sorted by importance")
+
+
+
+```
+The preceding list, while lengthy, is helpful for not only seeing the few variables that are most related to trends in losses, but also to see the many variables that were not very significant to the final model.  However, to summarize, following is a short list of the variables that were found to be the most important, based on the regularized regression algorithm that was run in the previous step.
+
+```{r list_important_coefs}
+
+#coef.indices.lambda.1se <- which(cvfitlm.coef.lamdbda.1se[,"Coefficient"] != 0)
+#names.important.vars.lambda.1se <- x_coef_colnames[coef.indices.lambda.1se]
+#coefs.important.vars.lambda.1se <- cvfitlm.coef.lamdbda.1se[coef.indices.lambda.1se,2]
+#cvfitlm.coef.lambda.1se <- cbind(names.important.vars.lambda.1se, coefs.important.vars.lambda.1se)
+#colnames(cvfitlm.coef.lambda.1se) <- c("Names", "Coefficients")
+#kable(cvfitlm.coef.lambda.1se, caption="Variables in the Lambda 1se Model")
+
+
+```
+In some cases, we may not have enough lag periods for a given predictor variable to equal the number of periods we would like to forecast.  In that case, we would need to project the trend of the predictor variable to include in the forecast model.  The Holt Winters Filter is a good algorithm for projecting trends.  In this section, we will use the HoltWinters function in R to forecast the variables that have non-zero coefficients in the glmnet model.
+
+```{r matrix_for_biplot}
+
+(important.vars.matrix <- x_new[,selected.indices])
+#(important.vars.matrix <- x_new[,coef.indices.lambda.1se - 1])
+
+#reverse the order
+important.vars.matrix <- apply(important.vars.matrix, 2, rev)
+
+rownames(important.vars.matrix) <- time.increments
+
+colnames(important.vars.matrix) <- x_new_colnames[selected.indices]
+#colnames(important.vars.matrix) <- names.important.vars.lambda.1se[-1]
+
+write.csv(file="ImportantVariables.csv", x=important.vars.matrix)
+
+biplot(princomp(t(important.vars.matrix)), cex=.8, arrow.len=.1)
+
+```
+ Following are forecasts.  The first series of forecasts represent univariate forecasts on each of the independent variables.  The second set of forecasts is based on the multivariate model.
+
+
+```{r univariate_forecasts}
+forecast.colnames <- x_new_colnames[selected.indices]
+#i=1
+matrix.of.forecasts = NULL
+for (i in 1:length(important.vars.matrix[1,])) {
+  hw <- HoltWinters(important.vars.matrix[,i], beta=TRUE, gamma=FALSE)
+  forecast <- predict(hw, n.ahead=maxlag, prediction.interval=TRUE, level=0.95) #with confidence interval
+forecast.no.interval <- predict(hw, n.ahead=maxlag, prediction.interval=FALSE, level=0.95) #no confidence interval
+  matrix.of.forecasts <- as.matrix(cbind(matrix.of.forecasts, forecast.no.interval))
+  plot(hw, forecast, main = forecast.colnames[i])
+  #  plot(hw, forecast, main=names.important.vars.lambda.1se[i + 1])
+}
+
+
+```
+
+```{r multivariate_forecast}
+
+forecast.set <- forecast.set[,selected.indices]
+str(forecast.set)
+
+if(include.offset == FALSE){
+##without offset
+  predict.ahead <- predict(cvfitlm, newx=forecast.set, type="response", s = cvfitlm.prewhitened$lambda.1se)
+  predict.x <-  predict(cvfitlm, newx=x_new[,selected.indices], type="response", s = cvfitlm.prewhitened$lambda.1se)
+}
+
+if(include.offset == TRUE){
+##with offset
+  predict.ahead <- predict(cvfitlm, newx=forecast.set, type="response", s = cvfitlm.prewhitened$lambda.1se, offset=lagged.offset)
+  predict.x <-  predict(cvfitlm, newx=x_new[,selected.indices], type="response", s = cvfitlm.prewhitened$lambda.1se, offset=lagged.offset)
+}
+
+#create plot of the glmnet forecast
+plot(c(rev(y_new),rev(predict.ahead)), type='p', main = "Claims Transaction Count", ylab="Claims Transactions", xlab="Time")
+lines(rev(y_new), col = "black", lty = 1, lwd = 2)
+lines(c(rev(predict.x),rev(predict.ahead)), col = "green", lty = 1, lwd = 2)
+legend("topleft", c("Forecast", "Actual"), col = c("green", "black"), text.col = "black", lty = c(1, 1, 1, 1, 2), lwd = c(2, 2, 2, 1, 2), merge = TRUE, bg = 'gray90', cex = .75)
+
+colnames(predict.ahead) <- "Forecast: ascending order"
+kable(predict.ahead)
+write.csv(file="y-prediction.csv", x=predict.ahead)
+
+```
+
+
+
