@@ -29,6 +29,16 @@
 %                        %  \end{figure}, and \caption{}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+\section{Dow Jones Forecast Variables and Methods}
+
+Following is a brief analysis, to forecast the annual change in the Dow Jones Industrial Average.  It is not meant to be a comprehensive, broad treatment of the many variables that might affect the markets.  Rather, the analysis focuses on some economic trends that have been in the news lately, and that are sometimes said to portent a possible crash in the markets.  For example, the U.S. national debt to GDP has rarely been higher, and has caused great concern for many investors.  Also, the rate of inflation has just begun to increase, after years of being at record lows.  Lastly among economic variables, the velocity of money is sometimes said to be related to market performance.  This analysis examines these variables, and their combined relationship to the year to year changes in the Dow Jones Industrial Index.  The data in this study goes back to 1961, and extends through 2017.
+
+In addition to the economic variables, demographic variables were also considered.  As a proxy for age distributions, the number of births by year, and also the birth rate by year, were included along with the previously mentioned economic variables.  It is well known that the population of the U.S. has been aging.  This trend has contributed to rising demand for fixed income investments, which has driven interest rates to very low levels.  Also, as older, retired individuals tend to purchase fewer consumer goods, inflation for these items as also been very low.  This has an impact toward lower velocity of money as well.  As retirees have been known to rebalance investment portfolios away from equities, and toward fixed income investments, large numbers of retirees have been seen to have a negative impact on the markets.  
+
+Conversely, when there are large numbers of people in their peak earnings years, which is approximately age 45 on average, it tends to have a positive impact on the markets.  We saw such a period in the 1990s, when a large proportion of Baby Boomers were in their mid forties.  
+
+The difference between the number of people in these two groups, those entering age 65 compared to those entering age 45, can provide a useful indicator as to the net impact of age demographics on the markets.  This variable was also included in this analysis, to determine how demographic forces interact with the other key economic variables in this forecast.
+
 <<echo=FALSE, results=hide>>=
 
  rm(list=ls())
@@ -71,7 +81,7 @@ dependent.variable <- "DJIChg"
 ##########################
 #Set the maximum lag for adjusting the variables in the data.
 #each variable will get a new column for each lag, up to the maximum set here.
-maxlag <- 30
+maxlag <- 5
 ##########################
 
 ##########################
@@ -237,7 +247,7 @@ fit=NULL
 fit <- auto.arima(y.scaled)
 par(mar=c(8,4,2,2))
 pdf(file=paste("plots/",dependent.variable,"_arima.pdf",sep=""))
-plot(forecast(fit,h=1), sub=paste(dependent.variable, sep=""))
+plot(forecast(fit,h=5), sub=paste(dependent.variable, sep=""))
 dev.off()
 y.arima.residuals <- resid(fit)
 
@@ -245,12 +255,23 @@ y.arima.residuals <- resid(fit)
 
 \section{Arima Univariate Forecast of Dow Jones Industrial Average}
 
-\section{Arima Forecast}
+Before examining the combined, multivariate impact of all the variables on changes in the Dow Jones Industrial Average, this section will perform a univariate analysis to create a forecast on nothing more than the DJIA data alone.  The method utilized is an auto-ARIMA, or automatic Auto Regressive Integrated Moving Average.  This brief document will not go into the details as to how the ARIMA method works.  However, perhaps it will suffice to say that it examines the following.
 
-\begin{figure}[htb]
+\begin{itemize}
+\item Auto Regressive trends - the AR in ARIMA: measures a trends correlation to itself, such as with seasonality, or in the case of annual data, possible cyclicality
+\item Integration - the I in ARIMA: measures the degree to which subracting each preceding time period's value removes the overall trend, also known as detrending.
+\item Moving Average - the MA in ARIMA: measures the extent to which a trend can be explained by a moving average pattern
+\end{itemize}
+
+The auto.arima function in R estimates each of these ARIMA parameters, and uses them to calculate a forecast.  The plot in Figure~\ref{fig:ArimaDJI} shows that this method estimates that the year to year change in the DJIA will be flat for the next five years, beginning in 2018.  Also, at the top of the chart, we see that the ARIMA parameters chosen by the algorithm are "(0,0,0)".  This indicates no discernable AR, I, or MA effects. 
+
+As an ARIMA forecast is univariate, this method does not take into account any of the previously mentioned economic and demographic variables.  The ARIMA analysis was performed here to see whether there were any affects within the DJIA trend itself that should be taken into account, which might significantly affect the forecast.  There do not appear to be any strong ARIMA affects that would affect our forecast either up, or down.
+
+\begin{figure}[h!]
 \begin{center}
 \includegraphics[width=\linewidth]{plots/DJIChg_arima.pdf}
 \caption{Univariate ARIMA forecast of the Dow Jones Industrial Index}
+\label{fig:ArimaDJI}
 \end{center}
 \end{figure}
 
@@ -452,16 +473,27 @@ dev.off()
 
 @
 
-\section{Forecast}
+\section{Multivariate Forecast with Bayesian Vector Auto Regression - BVAR}
 
-\begin{figure}[htb]
+In this section, we produce a multivariate forecast of the DJIA, utilizing the previously mentioned economic and demographic variables.  Older methods of performing multivariate time series analysis involved searching for top correlations between the predictor variables, and the target variable we are trying to predict.  It largely ignored the impact of predictor variables on each other.  A newer method for accounting for these cross variable impacts, is called Bayesian Vector Auto Regression, or BVAR.
+
+Figure~\ref{fig:BVARForecast} shows a forecast of the DJIA using the BVAR method.  The black trend line to the right of the blue, dashed, vertical line, indicates the forecasted trend in DJIA annual percentage growth for five years, after 2017.  The forecast suggests that annual growth will moderate, diminishing year over year.  The growth rate, however, is not predicted to be negative on a year over year basis.  Crashes in the short run as always possible.  However, these economic indicators, and demographic age factors taken together, do not indicate strong pressures for a market crash over the next five years, despite much media hyperbole to the contrary.
+
+\begin{figure}[h!]
 \begin{center}
 \includegraphics[width=\linewidth]{plots/DJIChg_forecast.pdf}
 \caption{Forecast of the Dow Jones Industrial Index, utilizing predictor variables that are scaled, and pre-whitened - Bayesian Vector Auto Regression (BVAR)}
+\label{fig:BVARForecast}
 \end{center}
 \end{figure}
 
 \section{Influencers}
+
+Figure~\ref{fig:BVARInfluencers} shows the top variables in the BVAR forecast model, as to their influence on each other.  Recall that the BVAR method takes into account not only each variable's impact on the target variable, the DJIA in this case, but also on each other.  The BVAR also examines the relationships between the variables, adjusting for many possible lags of the data over time.  This enables finding the variables that tend to be leading indicators.  This is a form of causality analysis, which investigates whether the strongest relationship, akin to the concept of correlation, occurs when the movement of one variable, precedes a corresponding movement on the part of another.
+
+We can see in Figure~\ref{fig:BVARInfluencers} that all the predictor variables not only tend to be relatively strong influencers of each other, but especially of the DJIA.  The DJIA, on the other hand, is not a strong influencer of the other variales.  
+
+This analysis also shows that the trend in the change in the DJIA is not a strong influencer of itself.  In other words, the past trend of the year over year trend in the DJIA is not a good predictor of the future.  We also saw this in the univariate ARIMA analysis as well.
 
 <<name="influencers", echo=False, fig=False>>=
 pdf(file=paste("plots/", dependent.variable, "_barchart_not_whitened.pdf",sep=""))
@@ -477,11 +509,16 @@ dev.off()
 
 @
 
-\begin{figure}[htb]
+\begin{figure}[h!]
 \begin{center}
 \includegraphics[width=\linewidth]{plots/DJIChg_barchart_not_whitened.pdf}
 \caption{Main inflencers of the Dow Jones Industrial Index - Bayesian Vector Auto Regression (BVAR)}
+\label{fig:BVARInfluencers}
 \end{center}
 \end{figure}
+
+\section{Summary}
+
+This analysis examined the impact of some economic and demographic trends that have gotten attention in the media, as to their influence on the stock market.  Many have predicted a collapse in the stock market, as a result of some of these trends.  While no analysis can guarantee against such a collapse, and there are many other variables involved with market performance than these few, this analysis suggests that recent trends in these variables, when taken together, have not reached levels that would make a severe decline in the markets inevitable.  However, the resulting forecast from this mulivariate analysis does suggest that the recent double digit growth rates of the market are not likely to be sustainable.  While annual growth rates are likely to remain positive, they will likely diminish year over year for at least the next five years.
 
 \end{document}
