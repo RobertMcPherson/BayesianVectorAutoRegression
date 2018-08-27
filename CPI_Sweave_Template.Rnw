@@ -265,7 +265,7 @@ The auto.arima function in R estimates each of these ARIMA parameters, and uses 
 
 As an ARIMA forecast is univariate, this method does not take into account any of the previously mentioned economic and demographic variables.  It only assumes that past patterns in the trend of the CPI will continue.  In the next section, we will evaluate the potential impact of the previously mentioned economic and demographic variables.
 
-\begin{figure}[h!]
+\begin{figure}[!ht]
 \begin{center}
 \includegraphics[width=\linewidth]{plots/CPI_arima.pdf}
 \caption{Univariate ARIMA forecast of the Consumer Price Index}
@@ -471,13 +471,13 @@ dev.off()
 
 @
 
-\section{Multivariate Forecast with Bayesian Vector Auto Regression - BVAR}
+\section{Multivariate Forecast with BVAR}
 
 In this section, we produce a multivariate forecast of the CPI, utilizing the previously mentioned economic and demographic variables.  Older methods of performing multivariate time series analysis involved searching for top correlations between the predictor variables, and the target variable we are trying to predict.  It largely ignored the impact of predictor variables on each other.  A newer method for accounting for these cross variable impacts, is called Bayesian Vector Auto Regression, or BVAR.
 
 Figure~\ref{fig:BVARForecastCPI} shows a forecast of the CPI using the BVAR method.  The black trend line to the right of the blue, dashed, vertical line, indicates the forecasted trend in the CPI for five years, after 2017.  The forecast suggests that annual CPI will largely increase on the whole.
 
-\begin{figure}[h!]
+\begin{figure}[!ht]
 \begin{center}
 \includegraphics[width=\linewidth]{plots/CPI_forecast.pdf}
 \caption{Forecast of the Consumer Price Index, utilizing predictor variables that are scaled, and pre-whitened - Bayesian Vector Auto Regression (BVAR)}
@@ -489,7 +489,11 @@ Figure~\ref{fig:BVARForecastCPI} shows a forecast of the CPI using the BVAR meth
 
 Figure~\ref{fig:BVARInfluencersCPI} shows the top variables in the BVAR forecast model, as to their influence on each other.  Recall that the BVAR method takes into account not only each variable's impact on the target variable, the CPI in this case, but also on each other.  The BVAR also examines the relationships between the variables, adjusting for many possible lags of the data over time.  This enables finding the variables that tend to be leading indicators.  This is a form of causality analysis, which investigates whether the strongest relationship, akin to the concept of correlation, occurs when the movement of one variable, precedes a corresponding movement on the part of another.
 
-We can see in Figure~\ref{fig:BVARInfluencersCPI} that all the predictor variables tend to be relatively strong influencers of each other, but do not have as much influence on inflation as measured by CPI.  Rather, CPI tends to be more of an influencer for many of the other variables, especially economic ones.
+We can see in Figure~\ref{fig:BVARInfluencersCPI} that all the predictor variables tend to be relatively strong influencers of the velocity of M2 money supply, as shown in the variable, m2\_velocity.  (M2 money supply includes the cash and deposits represented by M1 money supply, plus what is known as near money, which includes such things as savings and money market accounts, and other cash deposits.)  However, the predictor variables are not as strong as influencers of the Consumer Price Index.  There may be other variables that are more predictive, and could increase forecast confidence.
+
+It might be surprising to some, that the debt to GDP ratio does not appear as a more prominent influencer, given all the media attention the national debt has received.  However, there have been other years in history that saw worse debt to GDP ratios, and it did not necessarily drive high inflation.  Also, while some have suggested that the millenial generation may influence inflation upwards as they begin to set up households, and increase demand for all the goods and servies that go with that endeavor, it does not appear that this is a primary influencer of inflation this time around.  It may be that the Baby Boomer generation is still a primary counter-acting factor.
+
+Since the velocity of M2 money supply is so affected by the other predictor variables, it might be interesting to see how a forecast of M2 might be affected.  It is easy to imagine how inflation, demographics, and debt factors would affect the velocity of money moving in and out of the highly liquid accounts represented by M2 money supply.  It is not certain whether the direction of velocity would move upward or downward in such a forecast, however. 
 
 <<name="influencers", echo=False, fig=False>>=
 pdf(file=paste("plots/", dependent.variable, "_barchart_not_whitened.pdf",sep=""))
@@ -505,7 +509,7 @@ dev.off()
 
 @
 
-\begin{figure}[h!]
+\begin{figure}[!ht]
 \begin{center}
 \includegraphics[width=\linewidth]{plots/CPI_barchart_not_whitened.pdf}
 \caption{Main inflencers of the Consumer Price Index - Bayesian Vector Auto Regression (BVAR)}
