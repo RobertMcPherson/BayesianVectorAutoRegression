@@ -1,0 +1,57 @@
+> require(forecast)
+> require(vars)
+> var.data = read.csv(file.choose())
+> head(var.data)
+
+> #put data into a time series
+> carbon.ts = ts(CO2, frequency=1, start=c(1850), end=c(2010))
+> temp.ts = ts(Temp, frequency=1, start=c(1850), end=c(2010))
+  #subset the data from 1900 until 2010
+> surfacetemp = window(temp.ts, start=c(1900), end=c(2010))
+> co2 = window(carbon.ts, start=c(1900), end=c(2010))
+> climate.ts = cbind(co2, surfacetemp)
+> plot(climate.ts)
+  
+> #determine stationarity and number of lags to achieve stationarity
+> ndiffs(co2, alpha = 0.05, test = c("adf"))
+> ndiffs(surfacetemp, alpha = 0.05, test = c("adf"))
+
+> #difference to achieve stationarity
+> d.co2 = diff(co2)
+> d.temp = diff(surfacetemp)
+  
+> #again, we need a mts class dataframe
+> climate2.ts = cbind(d.co2, d.temp)
+> plot(climate2.ts)
+
+> #determine the optimal number of lags for vector autoregression
+> VARselect(climate2.ts, lag.max=10) $selection
+
+> #vector autoregression with lag1
+> var = VAR(climate2.ts, p=1)
+
+> serial.test(var, lags.pt=10, type="PT.asymptotic")
+
+#The null hypothesis is no serial correlation, so we can reject it with extreme prejudice.on to var3
+> var3 = VAR(climate2.ts, p=3)
+> serial.test(var3, lags.pt=10, type="PT.asymptotic")
+
+> summary(var3, equation="d.temp")
+
+> #does co2 granger cause temperature
+> grangertest(d.temp ~ d.co2, order=3)
+
+> #Clearly the model is not significant, so we can say that carbon emissions do not granger-cause surface temperatures.
+  
+> #does temperature granger cause co2
+> grangertest(d.co2 ~ d.temp, order =3)
+
+> #try again using lag 7
+> grangertest(d.temp ~ d.co2, order=7)
+
+> predict(var3, n.ahead=6, ci=0.95)
+
+> fcst = forecast(var3)
+> plot(fcst)
+
+
