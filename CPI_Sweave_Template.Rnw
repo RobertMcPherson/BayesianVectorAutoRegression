@@ -136,7 +136,7 @@ m2Velocity <- Quandl("FRED/M2V", api_key="DJGcfzQc5RYP1JSycMBv", collapse="annua
 
 raw.ts <- cbind(m1Velocity, m2Velocity, GDP[-1,], debtToGDP[-1,], shortTermDebtToLongTerm[-1,], CPI[-1,])
 
-raw.ts <- cbind(m1Velocity, m2Velocity, GDP[-1,], debtToGDP[-1,], shortTermDebtToLongTerm[-1,], CPI[-1,])
+#raw.ts <- cbind(GDP[-1,], debtToGDP[-1,], shortTermDebtToLongTerm[-1,], CPI[-1,])
 
 #save time increment vector
 #time.increments <- unique(raw_data_dummies[,time.increment.variable])
@@ -148,6 +148,8 @@ rownames(raw.ts) <- raw.ts[,1]
 data <- raw.ts[, !(names(raw.ts) %in% "Date")]
 
 colnames(data) <- c("CPI","shortTermDebtToLongTerm","debtToGDP","GDP","m1Velocity","m2Velocity")
+
+#colnames(data) <- c("CPI","shortTermDebtToLongTerm","debtToGDP","GDP")
 
 ##Import birth data
 
@@ -204,14 +206,14 @@ col.names <- colnames(SeriesData)
 x <- SeriesData[, !(names(SeriesData) %in% dependent.variable)]
 head(x)
 
-#scale the dependent variable
+#scale the independent variables
 x.scaled <- scale(x)
 
 #Isolate dependent variable values, based on name given in global variable inputs above
 y <- SeriesData[,dependent.variable]
 y.unscaled <- y
 
-#scale the dependent variable
+#scale the dependent variable - not used
 y.scaled <- scale(y)
 
 
@@ -226,6 +228,7 @@ num.cols <- length(x[1,])
 #str(x)
 #?auto.arima
 #generate ARIMA plots...intent is to get ARIMA parameters, rather than forecasts
+#i=1
 x.arima.residuals = NULL
 for (i in 1:num.cols){
   fit <- auto.arima(x.scaled[,i])
@@ -242,7 +245,7 @@ for (i in 1:num.cols){
 
 #run arima transformation on the dependent variable
 fit=NULL
-fit <- auto.arima(y.scaled)
+fit <- auto.arima(y.unscaled)
 par(mar=c(8,4,2,2))
 pdf(file=paste("plots/",dependent.variable,"_arima.pdf",sep=""))
 plot(forecast(fit,h=5), sub=paste(dependent.variable, sep=""))
@@ -320,7 +323,7 @@ dir.create("plots")
 #x2 <- subset(x, select= -c(X.Dividends, X.From.the.rest.of.the.world.6.))
 
 
-Y <- cbind.data.frame(x, y)
+Y <- cbind.data.frame(x, y.unscaled)
 colnames(Y) <- col.names
 nms <- dependent.variable
 Y <- as.matrix(Y)
@@ -450,7 +453,7 @@ Yout = Y[(T2+1):(T1+T2),]
 modelbvar=lbvar(Yin, p = 5, delta = 0.5)
 predbvar=predict(modelbvar,h=5)
 
-# = Forecasts of the volatility = #
+# = BVAR Forecasts = #
 k=paste(dependent.variable)
 pdf(file=paste("plots/", dependent.variable, "_forecast_not_whitened.pdf",sep=""))
 plot(c(Y[,k],predbvar[,k]),type="l", main=paste(dependent.variable, "Not Whitened"))

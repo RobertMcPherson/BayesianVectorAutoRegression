@@ -82,7 +82,7 @@ dependent.variable <- "DJI"
 ##########################
 #Set the maximum lag for adjusting the variables in the data.
 #each variable will get a new column for each lag, up to the maximum set here.
-maxlag <- 5
+maxlag <- 24
 ##########################
 
 ##########################
@@ -91,8 +91,8 @@ include.offset <- FALSE
 ##########################
 
 ##########################
-#Type the column name of the variable you would like to use as an offset, if any.
-#offset.variable <- "UnitCount"
+#Frequency intervals: e.g., Yearly, Quarterly, Monthly, Daily
+freq <- "quarterly"
 ##########################
 
 ##########################
@@ -120,21 +120,75 @@ include.QQ.plots <- FALSE
 
 
 #Note: this process takes the data in descending order, with the most recent data at the
-CPI <- Quandl("RATEINF/CPI_USA", api_key="DJGcfzQc5RYP1JSycMBv", collapse="monthly", start_date="1960-12-31", end_date="2017-12-31", type="raw", order="asc", force_irregular=TRUE)
+CPI <- Quandl("RATEINF/CPI_USA", api_key="DJGcfzQc5RYP1JSycMBv", collapse=freq, start_date="1960-12-31", end_date="2017-12-31", type="raw", order="asc", force_irregular=TRUE)
+CPI.lgth <- length(CPI[,1])
 
 #Nonfinancial corporate business; short-term debt as a percentage of total debt, Annual
-#shortTermDebtToLongTerm <- Quandl("FED/FL104140006_A", api_key="DJGcfzQc5RYP1JSycMBv", collapse="monthly", start_date="1960-12-31", end_date="2017-12-31", type="raw", order="asc", force_irregular=TRUE)
+#shortTermDebtToLongTerm <- Quandl("FED/FL104140006_A", api_key="DJGcfzQc5RYP1JSycMBv", collapse=freq, start_date="1960-12-31", end_date="2017-12-31", type="raw", order="asc", force_irregular=TRUE)
 
 #Financial soundness indicator, households; debt as a percent of gross domestic product
-#debtToGDP <- Quandl("FED/FL010000336_Q", api_key="DJGcfzQc5RYP1JSycMBv",collapse="monthly", start_date="1960-12-31", end_date="2017-12-31", type="raw", order="asc", force_irregular=TRUE)
+debtToGDP <- Quandl("FED/FL010000336_Q", api_key="DJGcfzQc5RYP1JSycMBv",collapse=freq, start_date="1960-12-31", end_date="2017-12-31", type="raw", order="asc", force_irregular=TRUE)
+debtToGDP.lgth <- length(debtToGDP[,1])
 
-#GDP <- Quandl("FED/FU086902001_A", api_key="DJGcfzQc5RYP1JSycMBv", collapse="monthly", start_date="1960-12-31", end_date="2017-12-31", type="raw", order="asc", force_irregular=TRUE)
+#GDP <- Quandl("FED/FU086902001_A", api_key="DJGcfzQc5RYP1JSycMBv", collapse=freq, start_date="1960-12-31", end_date="2017-12-31", type="raw", order="asc", force_irregular=TRUE)
 
-#m1Velocity <- Quandl("FRED/M1V", api_key="DJGcfzQc5RYP1JSycMBv",collapse="monthly", start_date="1960-12-31", end_date="2017-12-31", type="raw", order="asc", force_irregular=TRUE)
+m1Velocity <- Quandl("FRED/M1V", api_key="DJGcfzQc5RYP1JSycMBv",collapse=freq, start_date="1960-12-31", end_date="2017-12-31", type="raw", order="asc", force_irregular=TRUE)
+m1Velocity.lgth <- length(m1Velocity[,1])
 
-#m2Velocity <- Quandl("FRED/M2V", api_key="DJGcfzQc5RYP1JSycMBv", collapse="quarterly", start_date="1960-12-31", end_date="2017-12-31", type="raw", order="asc", force_irregular=TRUE)
+m2Velocity <- Quandl("FRED/M2V", api_key="DJGcfzQc5RYP1JSycMBv", collapse=freq, start_date="1960-12-31", end_date="2017-12-31", type="raw", order="asc", force_irregular=TRUE)
+m2Velocity.lgth <- length(m2Velocity[,1])
 
-raw.ts <- cbind(m1Velocity, m2Velocity, GDP[-1,], debtToGDP[-1,], shortTermDebtToLongTerm[-1,], CPI[-1,])
+naturalUnemp <- Quandl("FRED/NROUST", api_key="DJGcfzQc5RYP1JSycMBv", collapse=freq, start_date="1960-12-31", end_date="2017-12-31", type="raw", order="asc", force_irregular=TRUE)
+naturalUnemp.lgth <- length(naturalUnemp[,1])
+
+realPotentialGDP <- Quandl("FRED/GDPPOT", api_key="DJGcfzQc5RYP1JSycMBv", collapse=freq, start_date="1960-12-31", end_date="2017-12-31", type="raw", order="asc", force_irregular=TRUE)
+realPotentialGDP.lgth <- length(realPotentialGDP[,1])
+
+totalPopulation <- Quandl("FRED/POP", api_key="DJGcfzQc5RYP1JSycMBv", collapse=freq, start_date="1960-12-31", end_date="2017-12-31", type="raw", order="asc", force_irregular=TRUE)
+totalPopulation.lgth <- length(totalPopulation[,1])
+
+#equitiesUncertaintyIndex <- Quandl("FRED/WLEMUINDXD", api_key="DJGcfzQc5RYP1JSycMBv", collapse=freq, start_date="1960-12-31", end_date="2017-12-31", type="raw", order="asc", force_irregular=TRUE)
+
+#tradeWeightedUSDIndex <- Quandl("FRED/TWEXO", api_key="DJGcfzQc5RYP1JSycMBv", collapse=freq, start_date="1960-12-31", end_date="2017-12-31", type="raw", order="asc", force_irregular=TRUE)
+
+#fiveYrForwardExpectedInflRate <- Quandl("FRED/T5YIFR", api_key="DJGcfzQc5RYP1JSycMBv", collapse=freq, start_date="1960-12-31", end_date="2017-12-31", type="raw", order="asc", force_irregular=TRUE)
+
+#treasInflIndexedLongTermAvgYld <- Quandl("FRED/DLTIIT", api_key="DJGcfzQc5RYP1JSycMBv", collapse=freq, start_date="1960-12-31", end_date="2017-12-31", type="raw", order="asc", force_irregular=TRUE)
+
+oneYrTreasSecondaryMkt <- Quandl("FRED/DTB1YR", api_key="DJGcfzQc5RYP1JSycMBv", collapse=freq, start_date="1960-12-31", end_date="2017-12-31", type="raw", order="asc", force_irregular=TRUE)
+oneYrTreasSecondaryMkt.lgth <- length(oneYrTreasSecondaryMkt[,1])
+
+x.min <- min(
+  CPI.lgth,
+  debtToGDP.lgth,
+  m1Velocity.lgth,
+  m2Velocity.lgth,
+  naturalUnemp.lgth,
+  realPotentialGDP.lgth,
+  totalPopulation.lgth,
+  oneYrTreasSecondaryMkt.lgth
+  )
+
+
+CPI.trunc <- CPI[(CPI.lgth-x.min+1):CPI.lgth,]
+debtToGDP.trunc <- debtToGDP[(debtToGDP.lgth-x.min+1):debtToGDP.lgth,]
+m1Velocity.trunc <- m1Velocity[(m1Velocity.lgth-x.min+1):m1Velocity.lgth,]
+m2Velocity.trunc <- m2Velocity[(m2Velocity.lgth-x.min+1):m2Velocity.lgth,]
+naturalUnemp.trunc <- naturalUnemp[(naturalUnemp.lgth-x.min+1):naturalUnemp.lgth,]
+realPotentialGDP.trunc <- realPotentialGDP[(realPotentialGDP.lgth-x.min+1):realPotentialGDP.lgth,]
+totalPopulation.trunc <- totalPopulation[(totalPopulation.lgth-x.min+1):totalPopulation.lgth,]
+oneYrTreasSecondaryMkt.trunc <- oneYrTreasSecondaryMkt[(oneYrTreasSecondaryMkt.lgth-x.min+1):oneYrTreasSecondaryMkt.lgth,]
+
+raw.ts <- cbind(
+  CPI.trunc,
+  debtToGDP.trunc,
+  m1Velocity.trunc,
+  m2Velocity.trunc,
+  naturalUnemp.trunc,
+  realPotentialGDP.trunc,
+  totalPopulation.trunc,
+  oneYrTreasSecondaryMkt.trunc
+)
 
 #save time increment vector
 #time.increments <- unique(raw_data_dummies[,time.increment.variable])
@@ -145,7 +199,7 @@ time.increments <- raw.ts[,time.increment.variable]
 
 data <- raw.ts[, !(names(raw.ts) %in% "Date")]
 
-colnames(data) <- c("CPI","shortTermDebtToLongTerm","debtToGDP","GDP","m1Velocity","m2Velocity")
+colnames(data) <- c("CPI","debtToGDP","m1Velocity","m2Velocity","naturalUnemp","realPotentialGDP","totalPopulation","oneYrTreasSecondaryMkt")
 
 ##Import birth data
 
@@ -196,27 +250,31 @@ colnames(data) <- c("CPI","shortTermDebtToLongTerm","debtToGDP","GDP","m1Velocit
 # Import stock data from Yahoo
 start = as.Date("1960-12-30")
 end = as.Date("2017-12-30")
-getSymbols("DJI", src="yahoo", start=start, end=end, periodicity="monthly")
-#head(DJI)
-#?getSymbols
+getSymbols("DJI", src="yahoo", start=start, end=end)
+DJI.xts <- as.xts(DJI)
+DJI.interp <- na.interpolation(DJI.xts)
+#DJI.yearly <- to.yearly(DJI.interp)
+DJI.quarterly <- to.quarterly(DJI.interp)
+DJI.close <- data.frame(DJI.quarterly$DJI.interp.Close)
+colnames(DJI.close) <- "DJI"
 
-#head(data)
+# Adjust lengths of vectors to shortest length
+index.a <- length(data[,1])
+index.b <- length(DJI.close[,1])
+data2 <- data.frame(data[((index.a - index.b)+1):index.a,])
+#length(data2[,1])
+#length(DJI.close)
 
 #SeriesData <- cbind(births.2009, data, DJIChg)
 #SeriesData <- cbind(births.2009, data, DJI)
-SeriesData <- cbind(data, DJI)
-SeriesData <- SeriesData[,-1] #remove the "Year" column
-head(SeriesData)
-#length(data[,1])
-#length(DJI)
-#time.increment.variable
+SeriesData <- cbind(data2, DJI.close)
 
 col.names <- colnames(SeriesData)
 
 x <- SeriesData[, !(names(SeriesData) %in% dependent.variable)]
 head(x)
 
-#scale the dependent variable
+#scale the independent variables
 x.scaled <- scale(x)
 
 #Isolate dependent variable values, based on name given in global variable inputs above
@@ -241,6 +299,7 @@ num.cols <- length(x[1,])
 #str(x)
 #?auto.arima
 #generate ARIMA plots...intent is to get ARIMA parameters, rather than forecasts
+#i=1
 x.arima.residuals = NULL
 for (i in 1:num.cols){
   fit <- auto.arima(x.scaled[,i])
@@ -282,7 +341,7 @@ As an ARIMA forecast is univariate, this method does not take into account any o
 
 \begin{figure}[h!]
 \begin{center}
-\includegraphics[width=\linewidth]{plots/DJIChg_arima.pdf}
+\includegraphics[width=\linewidth]{plots/DJI_arima.pdf}
 \caption{Univariate ARIMA forecast of the Dow Jones Industrial Index}
 \label{fig:ArimaDJI}
 \end{center}
@@ -373,46 +432,29 @@ T2=floor(2*nrow(Y)/3)
 ###################################
 ##Perform analysis on pre-whitened data
 
-# = load package and data = #
-#install.packages("HDeconometrics")
-#library(HDeconometrics)
-#data("voldata")
-
-# = Break data into in and out of sample to test model accuracy= #
-#Yin=voldata[1:5499,]
-#Yout=voldata[-c(1:5499),]
+# Break data into in and out of sample to test model accuracy
 Yin = Y[1:T2,]
 Yout = Y[(T2+1):(T1+T2),]
 
-# = Run models = #
-# = OLS = #
-#modelols=HDvar(Yin,p=2) # takes a while to run
-#predols=predict(modelols,h=2)
-
-# = BVAR = #
+# BVAR 
 #?lbvar
 #?predict
-modelbvar=lbvar(Yin, p = 5, delta = 0.5)
-predbvar=predict(modelbvar,h=5)
+modelbvar=lbvar(Yin, p = 4, delta = 0.5)
+predbvar=predict(modelbvar,h=4)
 
-# = Forecasts of the volatility = #
+# Forecasts of the volatility
 k=paste(dependent.variable)
 pdf(file=paste("plots/", dependent.variable, "_forecast.pdf",sep=""))
 plot(c(Y[,k],predbvar[,k]),type="l", main=paste(dependent.variable))
-#lines(c(rep(NA,length(Y[,k])),predols[,k]))
 lines(c(rep(NA,length(Y[,k])),predbvar[,k]))
 abline(v=length(Y[,k]),lty=2,col=4)
-#legend("topleft",legend="BVAR",col=2,lty=1,lwd=1,seg.len=1,cex=1,bty="n")
-dev.off()
+#dev.off()
 
 # = Overall percentual error = #
-#MAPEols=abs((Yout-predols)/Yout)*100
 #MAPEbvar=abs((Yout-predbvar)/Yout)*100
-#matplot(MAPEols,type="l",ylim=c(0,80),main="Overall % error",col="lightsalmon",ylab="Error %")
 #aux=apply(MAPEbvar,2,lines,col="lightskyblue1")
-#lines(rowMeans(MAPEols),lwd=3,col=2,type="b")
 #lines(rowMeans(MAPEbvar),lwd=3,col=4,type="b")
-#legend("topleft",legend=c("OLS","BVAR"),col=c(2,4),lty=1,lwd=1,seg.len=1,cex=1,bty="n")
+#dev.off()
 
 # = Influences = #
 #aux=modelbvar$coef.by.block[2:23]
@@ -454,35 +496,27 @@ T2=floor(2*nrow(Y)/3)
 Yin = Y[1:T2,]
 Yout = Y[(T2+1):(T1+T2),]
 
-# = Run models = #
-# = OLS = #
-#modelols=HDvar(Yin,p=2) # takes a while to run
-#predols=predict(modelols,h=2)
-
-# = BVAR = #
+# BVAR
 #?lbvar
 #?predict
-modelbvar=lbvar(Yin, p = 5, delta = 0.5)
-predbvar=predict(modelbvar,h=5)
+modelbvar=lbvar(Yin, p = 4, delta = 0.5)
+predbvar=predict(modelbvar,h=4)
 
-# = Forecasts of the volatility = #
+# Forecasts of the volatility
 k=paste(dependent.variable)
 pdf(file=paste("plots/", dependent.variable, "_forecast_not_whitened.pdf",sep=""))
 plot(c(Y[,k],predbvar[,k]),type="l", main=paste(dependent.variable, "Not Whitened"))
-#lines(c(rep(NA,length(Y[,k])),predols[,k]))
 lines(c(rep(NA,length(Y[,k])),predbvar[,k]))
 abline(v=length(Y[,k]),lty=2,col=4)
-#legend("topleft",legend="BVAR",col=2,lty=1,lwd=1,seg.len=1,cex=1,bty="n")
 dev.off()
 
-# = Overall percentual error = #
-#MAPEols=abs((Yout-predols)/Yout)*100
+# Overall percentual error
 #MAPEbvar=abs((Yout-predbvar)/Yout)*100
-#matplot(MAPEols,type="l",ylim=c(0,80),main="Overall % error",col="lightsalmon",ylab="Error %")
+#matplot(MAPEbvar,type="l",ylim=c(0,80),main="Overall % error",col="lightsalmon",ylab="Error %")
 #aux=apply(MAPEbvar,2,lines,col="lightskyblue1")
 #lines(rowMeans(MAPEols),lwd=3,col=2,type="b")
 #lines(rowMeans(MAPEbvar),lwd=3,col=4,type="b")
-#legend("topleft",legend=c("OLS","BVAR"),col=c(2,4),lty=1,lwd=1,seg.len=1,cex=1,bty="n")
+
 
 @
 
@@ -494,7 +528,7 @@ Figure~\ref{fig:BVARForecast} shows a forecast of the DJIA using the BVAR method
 
 \begin{figure}[h!]
 \begin{center}
-\includegraphics[width=\linewidth]{plots/DJIChg_forecast.pdf}
+\includegraphics[width=\linewidth]{plots/DJI_forecast.pdf}
 \caption{Forecast of the Dow Jones Industrial Index, utilizing predictor variables that are scaled, and pre-whitened - Bayesian Vector Auto Regression (BVAR)}
 \label{fig:BVARForecast}
 \end{center}
@@ -524,7 +558,7 @@ dev.off()
 
 \begin{figure}[h!]
 \begin{center}
-\includegraphics[width=\linewidth]{plots/DJIChg_barchart_not_whitened.pdf}
+\includegraphics[width=\linewidth]{plots/DJI_barchart_not_whitened.pdf}
 \caption{Main inflencers of the Dow Jones Industrial Index - Bayesian Vector Auto Regression (BVAR)}
 \label{fig:BVARInfluencers}
 \end{center}

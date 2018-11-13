@@ -122,7 +122,7 @@ m2Velocity <- Quandl("FRED/M2V", api_key="DJGcfzQc5RYP1JSycMBv", collapse="annua
 
 raw.ts <- cbind(m1Velocity, m2Velocity, GDP[-1,], debtToGDP[-1,], shortTermDebtToLongTerm[-1,], CPI[-1,])
 
-raw.ts <- cbind(m1Velocity, m2Velocity, GDP[-1,], debtToGDP[-1,], shortTermDebtToLongTerm[-1,], CPI[-1,])
+#raw.ts <- cbind(GDP[-1,], debtToGDP[-1,], shortTermDebtToLongTerm[-1,], CPI[-1,])
 
 #save time increment vector
 #time.increments <- unique(raw_data_dummies[,time.increment.variable])
@@ -133,7 +133,7 @@ rownames(raw.ts) <- raw.ts[,1]
 
 data <- raw.ts[, !(names(raw.ts) %in% "Date")]
 
-colnames(data) <- c("CPI","shortTermDebtToLongTerm","debtToGDP","GDP","m1Velocity","m2Velocity")
+colnames(data) <- c("CPI","shortTermDebtToLongTerm","debtToGDP","GDP")
 
 #head(data)
 

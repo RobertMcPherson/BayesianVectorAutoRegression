@@ -54,7 +54,7 @@ library(xts)
 
 ##########################
 #Input the column name of the dependent variable to predict.
-dependent.variable <- "DJI.Chg"
+dependent.variable <- "DJIChg"
 ##########################
 
 ##########################
@@ -146,9 +146,9 @@ head(births.2009)
 Dow <- read.csv("DJI_Historical_Chg_Data.csv")
 head(Dow)
 Dow.interp <- na.interpolation(Dow)
-DJI.Chg <- Dow[1:35,2]
+DJIChg <- Dow[1:35,2]
 
-SeriesData <- cbind(births.2009, data, DJI.Chg)
+SeriesData <- cbind(births.2009, data, DJIChg)
 SeriesData <- SeriesData[,-1] #remove the "Year" column
 head(SeriesData)
 
