@@ -279,6 +279,9 @@ x.scaled <- scale(x)
 
 #Isolate dependent variable values, based on name given in global variable inputs above
 y <- SeriesData[,dependent.variable]
+#y <- c(y[1],y)
+#y <- diff(y)
+#y <- log(y)
 y.unscaled <- y
 
 #scale the dependent variable
