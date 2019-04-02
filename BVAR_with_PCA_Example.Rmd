@@ -1,0 +1,533 @@
+---
+title: "Time Series Forecast: Bayesian Vector Auto Regression (BVAR)"
+output:
+  html_document:
+     toc: true
+     toc_float: true
+  html_notebook: default
+  pdf_document: default
+  word_document: default
+---
+
+#Introduction
+
+This analysis examines changes in a book of business over time on a quarterly basis through the first quarter of 2019, and produces a forecast of total incurred losses based on the Bayesian Vector Auto Regression method (BVAR).  The forecast is intended to indicate whether changes in exposure characteristics in the underlyling book of business are putting either upward, or downward pressure on losses.
+
+Viewing data across time is inherently complex, but is necessary to be able to anticipate future trends, rather than constantly reacting to trends after they have already occurred.  A good analogy for this can be found in a quote by the legendary hockey star, Wayne Gretzky.  Wayne famously said that the secret to his success was that, "a good hockey player plays where the puck is.  A great hockey player plays where the puck is going to be".  In the context of forecasting losses, that is all we are really trying to do: respond to where losses are likely to be, not just where they are today.
+
+
+```{r install_libraries, echo=FALSE, results='hide', message=FALSE, warning=FALSE}
+
+
+#install.packages("sqldf")
+#install.packages("dummies")
+#install.packages("forecast")
+#install.packages("orderedLasso")
+#install.packages("glmnet")
+#install.packages("glmnetcr")
+#install.packages("h2o")
+#install.packages("addendum")
+#install.packages("testthat")
+#devtools::use_testthat
+
+rm(list=ls())
+
+setwd("")
+dir.create("plots")
+
+library(tidyr)
+library(dplyr)
+library(sqldf) #for running sql on data frames
+library(dummies) #for creating one-hot encoding
+library(forecast) #for the Holt-Winters forecast filter
+#library(orderedLasso)
+library(glmnet) #for running regularized GLM
+library(glmnetcr) #for running regularized GLM
+#library(h2o)
+library(knitr) #for reproducible research, i.e., Markdown
+library(testthat)
+library(xtable)
+library(HDeconometrics)
+#ls("package:HDeconometrics")
+
+library(MTS) #https://www.rdocumentation.org/packages/MTS/versions/1.0
+#also: https://www.rdocumentation.org/packages/MTS/versions/1.0/topics/BVAR
+#ls("package:MTS")
+#?GrangerTest
+#?BVAR
+
+library(VARsignR) #https://cran.r-project.org/web/packages/VARsignR/vignettes/VARsignR-vignette.html
+
+#also check out BMR and see if I can find the relevant package: https://www.kthohr.com/bmr/BMR.pdf
+
+
+##########################
+##Input Global Variables##
+##########################
+
+##########################
+#Input the column name of the dependent variable to predict.
+dependent.variable <- "total_incurred"
+#dependent.variable <- "WP"
+##########################
+
+##########################
+#Set the maximum lag for adjusting the variables in the data.
+#each variable will get a new column for each lag, up to the maximum set here.
+maxlag <- 12
+##########################
+
+##########################
+#Input the column name that has the time increments in it, such as years, or year/months.
+time.increment.variable <- "policy_yr_qtr"
+##########################
+
+##########################
+#Select whether to include plots with the arima, pre-whitening step
+include.arima.plots <- TRUE
+##########################
+
+##########################
+#Select whether to include cross correlation plots
+include.cross.correlation.plots <- TRUE
+##########################
+
+##########################
+#Select whether to include quartile to quartile (QQ) plots
+include.QQ.plots <- FALSE
+##########################
+
+#Note: this process takes the data in descending order, with the most recent data at the
+#bottom, or end of the list/table.
+
+load("NIC_property_data.rda")
+str(dat)
+
+write.csv(head(dat, n=100), "dat_head.csv")
+#write.csv(head(dat), "sampledata.csv")
+#length(dat[,1])
+
+sink("summary.txt")
+summary(dat)
+sink()
+
+##One-Hot Encoding: Creating Dummy Variables
+
+#turn categorical variables into dummy variables, and keep numerical data unchanged
+raw_data_dummies <- dummy.data.frame(data=dat, names=c(
+"policy_status"
+,"form"
+,"Package"
+,"fdescription"
+,"grp3description"
+,"grp2description"
+,"wrbc_asl"
+,"protection_class"
+,"construction"
+,"AOP_Deductible"
+,"location_building"
+,"wind"
+,"uw_scale"
+,"renewal"
+,"ProgramType"
+,"ProgramDesc"
+,"NationalAgency"
+,"state"
+#,"terr_code" #this variable has category 'C' also appearing as lower case - results in duplication error
+,"MP.flag"
+,"row_num"
+), sep=".", all=TRUE)
+
+#run again, but leave out all data types except the dummy variables, by changing to all=FALSE
+#turn categorical variables into dummy variables, and keep numerical data unchanged
+raw_data_dummies2 <- dummy.data.frame(data=dat, names=c(
+"policy_status"
+,"form"
+,"Package"
+,"fdescription"
+,"grp3description"
+,"grp2description"
+,"wrbc_asl"
+,"protection_class"
+,"construction"
+,"AOP_Deductible"
+,"location_building"
+,"wind"
+,"uw_scale"
+,"renewal"
+,"ProgramType"
+,"ProgramDesc"
+,"NationalAgency"
+,"state"
+#,"terr_code" #this variable has category 'C' also appearing as lower case - results in duplication error
+,"MP.flag"
+,"row_num"
+), sep=".", all=FALSE)
+
+
+#head(raw_data_dummies)
+
+
+#sum the ones (i.e., exposure counts) for each category by time period
+cats <- aggregate(raw_data_dummies2, by=list(dat$policy_yr_qtr), FUN=sum)
+head(cats)
+
+#isolate all the numeric variables (i.e., not based on categorical data)
+raw_data_numeric <- data.frame(dat[,c(
+"WH_Deductible"
+,"LOI"
+,"Year_Built"
+,"miles_to_ocean"
+,"baserate"
+,"LOI_Factor"
+,"uw_scale_factor"
+,"age_factor"
+,"construction_factor"
+,"coverage_factor"
+,"deductible_factor"
+,"form_factor"
+,"protection_class_factor"
+,"regionfactor"
+,"windload"
+,"minrate"
+,"minimum_premium"
+,"total_factor"
+,"Charged.Prem"
+,"Manual.Prem"
+,"Policy.Premium"
+,"loss_paid"
+,"lae_paid"
+,"loss_reserve"
+,"lae_reserve"
+,"total_incurred"
+,"clm_ct"
+,"capped_loss_ratio"
+,"policy_yr_qtr"
+)])
+
+#aggregate numeric data by averaging over time periods
+nums <- aggregate(raw_data_numeric, by=list(raw_data_numeric$policy_yr_qtr), FUN=mean)
+#?apply
+#head(nums)
+
+#aggregate numeric data by summing over time periods
+nums.sum <- aggregate(raw_data_numeric, by=list(raw_data_numeric$policy_yr_qtr), FUN=sum)
+
+incurred.loss.ratio <- nums.sum$total_incurred/nums.sum$Charged.Prem
+#clms.freq <- nums.sum$clm_ct
+
+SeriesData <- cbind(cats, nums)
+#head(SeriesData)
+write.csv(SeriesData, "SeriesData.csv")
+
+#fix column names to have proper name syntax
+tidy.colnames <- make.names(colnames(SeriesData), unique=TRUE)
+colnames(SeriesData) <- tidy.colnames
+
+#get list of variables, and paste into exported list below
+write.csv(file="colnames.csv",x=tidy.colnames)
+
+#Use the list below as a starting point for selecting predictor variables. Uncomment variables to select.
+
+x <- SeriesData
+
+
+#head(x)
+
+#scale the independent variables
+x.scaled <- scale(x)
+
+#Isolate dependent variable values, based on name given in global variable inputs above
+y <- SeriesData[,dependent.variable]
+y.unscaled <- y
+
+#scale the dependent variable
+y.scaled <- scale(y)
+
+#save column names
+x.colnames <- data.frame(colnames(x))
+
+```
+
+##Whitening the Time Series Data
+
+Before analyzing time series data to search for correlations with leading indicators, we first pre-whiten all of the variables.  This makes the data look more like white noise, by removing artifacts that can cause spurious correlations, such as seasonality, trend, and inherent moving average effects.  This analysis removes these effects utilizing the popular ARIMA method (Auto-regressive, Integrated, Moving Average).  After processing the data with ARIMA, each variable resembles white noise.  It is this data set that we use to find the leading indicators that are most correlated with the target variable (which is also pre-whitened for this step).
+
+Univariate forecasts are also be generated by the ARIMA method.  These forecasts are based upon any inherent seasonality, trend, and moving average patterns found within each variable's historical data.  A graph of each forecast is shown in this section.  A flat line forecast for any given variable means that there were not enough effects from trend, seasonality/cyclicality, or moving average components within the time series upon which to base a forecast.  In this case, the forecast is equivalent to the mean.  The whitened data set is produced by subtracting each variable's actual values from their forecasted values.
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+##ARIMA Time Series Analysis
+
+#i=1
+num.cols <- length(x[1,])
+#apply(x,1,function(x) sum(is.na(x)))
+#str(x)
+#?auto.arima
+#generate ARIMA plots...intent is to get ARIMA parameters, rather than forecasts
+x.arima.residuals = NULL
+for (i in 1:num.cols){
+  fit <- auto.arima(x.scaled[,i])
+  if(include.arima.plots == TRUE){
+     pdf(paste("plots/ARIMA_",x.colnames[i,],".pdf", sep="")) #print graph to PDF file
+     par(mar=c(8,4,2,2))
+     plot(forecast(fit,h=maxlag), sub=paste(x.colnames[i,]))
+     dev.off()
+
+     par(mar=c(8,4,2,2)) #repeat graph to show it in R Markdown
+     plot(forecast(fit,h=maxlag), sub=paste(x.colnames[i,]))
+  } #end if
+
+  #assemble a table of ARIMA residuals for use in cross-correlation analysis
+  temp.resid <- resid(fit)
+  x.arima.residuals <- as.matrix(cbind(x.arima.residuals, temp.resid))
+} #end loop
+
+#run arima transformation on the dependent variable
+fit=NULL
+fit <- auto.arima(y.scaled)
+
+if(include.arima.plots == TRUE){
+  pdf(paste("plots/ARIMA_",dependent.variable,".pdf", sep=""))
+  par(mar=c(8,4,2,2))
+  plot(forecast(fit,h=maxlag), sub=paste(dependent.variable, sep=""))
+  dev.off()
+
+  par(mar=c(8,4,2,2)) #repeat graph to show it in R Markdown
+  plot(forecast(fit,h=1), sub=paste(dependent.variable, sep="")) 
+} #end if
+y.arima.residuals <- resid(fit)
+
+#create a standardized, scaled, and normalized version of the data
+#?scale
+#glm
+
+if(include.QQ.plots == TRUE){
+#check distributions of independent variables for normality
+  for (i in 1:length(x.scaled[1,])){
+    pdf(paste("plots/QQ_",x.colnames[i,],".pdf", sep=""))
+    qqnorm(x.arima.residuals[,i], main=paste(x.colnames[i,]))
+    dev.off()
+
+    qqnorm(x.arima.residuals[,i], main=paste(x.colnames[i,])) #repeat graph to show it for R Markdown
+  }
+}
+
+#check dependent variable for normality
+#qqnorm(y.arima.residuals, main=paste(dependent.variable,sep=""))
+
+#check offset variable for normality
+#qqnorm(offset.arima.residuals, main=paste(offset.variable,sep=""))
+
+##Cross Correlation Analysis
+
+#i=1
+##cross correlation analysis
+#leading indicators in 'x' will have negative lag values for the most significant
+#correlations in the chart.
+#note: analysis is run on ARIMA residuals so as to pre-whiten the data
+
+##function for generating cross correlation tables and plots  
+cross.correl <- function(indep.vars.prewhitened, dep.vars.prewhitened, plots.subdirectory.name){
+#rm(cross.correl)    
+  x <- indep.vars.prewhitened  
+  y <- dep.vars.prewhitened  
+  subdir <- plots.subdirectory.name
+  dir.create(paste("plots/",subdir,sep=""))  
+
+  pos.cor.tbl <- NULL
+  neg.cor.tbl <- NULL
+  tmp <- NULL
+  for (i in 1:length(x[1,])){
+    cross.correl <- ccf(x[,i], y, plot=FALSE, na.action = na.contiguous)
+
+    #find best correlation
+    ind.max <- which(abs(cross.correl$acf[1:length(cross.correl$acf)])==max(abs(cross.correl$acf[1:length(cross.correl$acf)])))
+    #extract optimal lag, and optimal corresponding correlation coefficient
+    max.cor <- cross.correl$acf[ind.max]
+    lag.opt <- cross.correl$lag[ind.max]
+
+    #calculate statistical significance of the optimal correlation    
+    p.val <- 2 * (1 - pnorm(abs(max.cor), mean = 0, sd = 1/sqrt(cross.correl$n.used)))
+
+    ## positively correlated, statistically significant, leading indicators
+    if(p.val <= 0.05 && lag.opt < 0 && max.cor > 0){
+       #make table
+       tmp <- cbind(paste(x.colnames[i,]), round(max.cor,2), lag.opt, round(p.val,3))
+       pos.cor.tbl <- rbind(tmp, pos.cor.tbl)
+       #make plot
+       pdf(paste("plots/",subdir,"/CCF_pos_",x.colnames[i,],".pdf", sep=""))
+       par(mar=c(5,7,4,2)) #set the margins so title does not get cut off
+       ccf(x[,i], y, plot=TRUE, main=paste(x.colnames[i,]), na.action = na.contiguous)    
+       dev.off()
+
+       #repeat graph for R Markdown purposes
+       par(mar=c(5,7,4,2)) #set the margins so title does not get cut off
+       ccf(x[,i], y, plot=TRUE, main=paste(x.colnames[i,]), na.action = na.contiguous) 
+    } #end if
+       
+    ## negatively correlated, statistically significant, leading indicators
+    if(p.val <= 0.05 && lag.opt < 0 && max.cor < 0){
+       #make table
+       tmp <- cbind(paste(x.colnames[i,]), round(max.cor,2), lag.opt, round(p.val,3))
+       neg.cor.tbl <- rbind(tmp, neg.cor.tbl)
+       #make plot
+       pdf(paste("plots/",subdir,"/CCF_neg_",x.colnames[i,],".pdf", sep=""))
+       par(mar=c(5,7,4,2)) #set the margins so title does not get cut off
+       ccf(x[,i], y, plot=TRUE, main=paste(x.colnames[i,]), na.action = na.contiguous)    
+       dev.off()
+
+       #repeat graph for R Markdown purposes       
+       #par(mar=c(5,7,4,2)) #set the margins so title does not get cut off
+       #ccf(x[,i], y, plot=TRUE, main=paste(x.colnames[i,]), na.action = na.contiguous)    
+    } #end if
+} #end loop
+
+
+  ##export csv reports: 
+  #one for significant positive leading indicators, and one for significant negative leading indicators  
+  #positive correlation leading indicator summary
+  colnames(pos.cor.tbl) <- c("Variable", "Cor", "Lag", "p_val")
+  print(kable(data.frame(pos.cor.tbl),caption="Positively correlated leading indicators"))
+  write.csv(data.frame(pos.cor.tbl), paste("plots/",subdir,"/LeadingIndicators_Positive.csv",sep=""))
+
+  #negative correlation leading indicator summary
+  colnames(neg.cor.tbl) <- c("Variable", "Cor", "Lag", "p-val")
+  print(kable(data.frame(neg.cor.tbl),caption="Negatively correlated leading indicators")) 
+  write.csv(data.frame(neg.cor.tbl), paste("plots/",subdir,"/LeadingIndicators_Negative.csv",sep=""))
+  
+  #combine positive and negative leading indicator lists into one reference table
+  leading.indicators <- rbind(pos.cor.tbl, neg.cor.tbl)
+  return(leading.indicators)
+  
+} #end function
+
+```
+
+
+#Forecasting
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+###############################################################
+##Forcast
+
+x_and_y <- cbind.data.frame(x, y)
+#colnames(Y) <- col.names
+col.names <- colnames(x_and_y)
+
+nms <- dependent.variable
+x_and_y <- as.matrix(x_and_y)
+
+#x.pca <- princomp(t(scale(x)))
+x.pca <- prcomp(x, center=TRUE, scale=TRUE)
+
+pdf("x_pca.pdf")
+plot(x.pca)                  
+dev.off()
+
+predictors.pca <- x.pca$x[,1:6]
+write.csv(predictors.pca, "x_pca.csv")
+#length(x[,1])
+#str(x.pca)
+
+Y <- cbind(predictors.pca, y)
+
+# Fit a Basic VAR-L(3,4) on simulated data
+T1=floor(nrow(Y)/3)
+T2=floor(2*nrow(Y)/3)
+#?constructModel
+#m1=constructModel(Y,p=4,struct="Basic",gran=c(20,10),verbose=FALSE,IC=FALSE,T1=T1,T2=T2,ONESE=TRUE)
+#m1=constructModel(Y,p=4,struct="Tapered",gran=c(50,10),verbose=FALSE,T1=T1,T2=T2,IC=FALSE)
+#plot(m1)
+#results=cv.BigVAR(m1)
+#plot(results)
+#predict(results,n.ahead=1)
+
+#SparsityPlot.BigVAR.results(results)
+
+#str(results)
+#results@preds
+#results@alpha
+#results@Granularity
+#results@Structure
+#results@lagmax
+#results@Data
+#plot(results@Data)
+
+#install.packages("devtools")
+#library(devtools)
+#install_github("gabrielrvsc/HDeconometrics")
+
+###################################
+#The above, BigVAR package will not handle data sets this wide.  Trying the
+#Bayesian Vector Auto Regression (BVAR) algorithm
+
+###################################
+##Perform analysis on pre-whitened data
+
+# Break data into in and out of sample to test model accuracy
+Yin = Y[1:T2,]
+Yout = Y[(T2+1):(T1+T2),]
+
+# BVAR 
+#?lbvar
+#?predict
+#?lbvar
+modelbvar=lbvar(Yin, p = 5)
+predbvar=predict(modelbvar,h=4)
+#str(predbvar)
+
+# Forecasts of the volatility
+#k=paste(dependent.variable)
+k="y"
+pdf(file=paste("plots/", dependent.variable, "_forecast.pdf",sep=""))
+plot(c(Y[,k],predbvar[,k]),type="l", main=paste(dependent.variable), xlab="Time", ylab="Values")
+lines(c(rep(NA,length(Y[,k])),predbvar[,k]))
+abline(v=length(Y[,k]),lty=2,col=4)
+dev.off()
+
+# = Overall percentual error = #
+#MAPEbvar=abs((Yout-predbvar)/Yout)*100
+#aux=apply(MAPEbvar,2,lines,col="lightskyblue1")
+#lines(rowMeans(MAPEbvar),lwd=3,col=4,type="b")
+#dev.off()
+
+# = Influences = #
+#aux=modelbvar$coef.by.block[2:23]
+#impacts=abs(Reduce("+", aux ))
+#diag(impacts)=0
+#I=colSums(impacts)
+#R=rowSums(impacts)
+#par(mfrow=c(2,1))
+#barplot(I,col=rainbow(30),cex.names = 0.3, main = "Most Influent")
+#barplot(R,col=rainbow(30),cex.names = 0.3, main = "Most Influenced")
+
+pdf(file=paste("plots/", dependent.variable, "_barchart.pdf",sep=""))
+aux=modelbvar$coef.by.block
+impacts=abs(Reduce("+", aux ))
+diag(impacts)=0
+I=colSums(impacts)
+R=rowSums(impacts)
+par(mfrow=c(2,1))
+barplot(I,col=rainbow(30),cex.names = 0.3, main = "Most Influent")
+barplot(R,col=rainbow(30),cex.names = 0.3, main = "Most Influenced")
+dev.off()
+
+
+###############################################################
+
+
+```
+
+
+#Conclusion
+
+
+
+
+
+
+
+
