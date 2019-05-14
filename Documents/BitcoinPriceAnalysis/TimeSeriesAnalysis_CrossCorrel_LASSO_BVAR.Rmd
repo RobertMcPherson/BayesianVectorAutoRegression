@@ -1,0 +1,795 @@
+---
+title: "Multivariate Econometric Forcasting Sample Code"
+author: "Bob McPherson"
+date: "April 2, 2019"
+output:
+  html_document:
+     toc: true
+     toc_float: true
+  html_notebook: default
+  pdf_document: default
+  word_document: default
+---
+
+#Introduction
+
+Viewing data across time is inherently complex, but is necessary to be able to anticipate future trends, rather than constantly reacting to trends after they have already occurred.  A good analogy for this can be found in a quote by the legendary hockey star, Wayne Gretzky.  Wayne famously said that the secret to his success was that, "a good hockey player plays where the puck is.  A great hockey player plays where the puck is going to be".  In the context of forecasting losses, that is all we are really trying to do: respond to where losses are likely to be, not just where they are today.
+
+
+
+
+```{r install_libraries, echo=FALSE, results='hide', message=FALSE, warning=FALSE}
+
+
+#install.packages("sqldf")
+#install.packages("dummies")
+#install.packages("forecast")
+#install.packages("orderedLasso")
+#install.packages("glmnet")
+#install.packages("glmnetcr")
+#install.packages("h2o")
+#install.packages("addendum")
+#install.packages("testthat")
+#devtools::use_testthat
+
+rm(list=ls())
+
+setwd("C:/Users/rmcpherson/Documents/Projects/nautilus_property_analysis/quarterly_analysis")
+dir.create("plots")
+
+library(tidyr)
+library(dplyr)
+library(sqldf) #for running sql on data frames
+library(dummies) #for creating one-hot encoding
+library(forecast) #for the Holt-Winters forecast filter
+#library(orderedLasso)
+library(glmnet) #for running regularized GLM
+library(glmnetcr) #for running regularized GLM
+#library(h2o)
+library(knitr) #for reproducible research, i.e., Markdown
+library(testthat)
+library(xtable)
+library(HDeconometrics)
+#ls("package:HDeconometrics")
+
+library(MTS) #https://www.rdocumentation.org/packages/MTS/versions/1.0
+#also: https://www.rdocumentation.org/packages/MTS/versions/1.0/topics/BVAR
+#ls("package:MTS")
+#?GrangerTest
+#?BVAR
+
+library(VARsignR) #https://cran.r-project.org/web/packages/VARsignR/vignettes/VARsignR-vignette.html
+
+#also check out BMR and see if I can find the relevant package: https://www.kthohr.com/bmr/BMR.pdf
+
+
+
+##########################
+##Input Global Variables##
+##########################
+
+##########################
+#Input the column name of the dependent variable to predict.
+dependent.variable <- "total_incurred"
+#dependent.variable <- "WP"
+##########################
+
+##########################
+#Set the maximum lag for adjusting the variables in the data.
+#each variable will get a new column for each lag, up to the maximum set here.
+maxlag <- 12
+##########################
+
+##########################
+#Input the column name that has the time increments in it, such as years, or year/months.
+time.increment.variable <- "policy_yr_qtr"
+##########################
+
+##########################
+#Select whether to include plots with the arima, pre-whitening step
+include.arima.plots <- TRUE
+##########################
+
+##########################
+#Select whether to include cross correlation plots
+include.cross.correlation.plots <- TRUE
+##########################
+
+##########################
+#Select whether to include quartile to quartile (QQ) plots
+include.QQ.plots <- FALSE
+##########################
+
+#Note: this process takes the data in descending order, with the most recent data at the
+#bottom, or end of the list/table.
+
+#load("") ##no data -- not to be run; this is just sample code only
+str(dat)
+
+write.csv(head(dat, n=100), "dat_head.csv")
+#write.csv(head(dat), "sampledata.csv")
+#length(dat[,1])
+
+sink("summary.txt")
+summary(dat)
+sink()
+
+##One-Hot Encoding: Creating Dummy Variables
+
+#turn categorical variables into dummy variables, and keep numerical data unchanged
+raw_data_dummies <- dummy.data.frame(data=dat, names=c(
+"policy_status"
+,"form"
+,"Package"
+,"fdescription"
+,"grp3description"
+,"grp2description"
+,"wrbc_asl"
+,"protection_class"
+,"construction"
+,"AOP_Deductible"
+,"location_building"
+,"wind"
+,"uw_scale"
+,"renewal"
+,"ProgramType"
+,"ProgramDesc"
+,"NationalAgency"
+,"state"
+#,"terr_code" #this variable has category 'C' also appearing as lower case - results in duplication error
+,"MP.flag"
+,"row_num"
+), sep=".", all=TRUE)
+
+#run again, but leave out all data types except the dummy variables, by changing to all=FALSE
+#turn categorical variables into dummy variables, and keep numerical data unchanged
+raw_data_dummies2 <- dummy.data.frame(data=dat, names=c(
+"policy_status"
+,"form"
+,"Package"
+,"fdescription"
+,"grp3description"
+,"grp2description"
+,"wrbc_asl"
+,"protection_class"
+,"construction"
+,"AOP_Deductible"
+,"location_building"
+,"wind"
+,"uw_scale"
+,"renewal"
+,"ProgramType"
+,"ProgramDesc"
+,"NationalAgency"
+,"state"
+#,"terr_code" #this variable has category 'C' also appearing as lower case - results in duplication error
+,"MP.flag"
+,"row_num"
+), sep=".", all=FALSE)
+
+
+#head(raw_data_dummies)
+
+
+#sum the ones (i.e., exposure counts) for each category by time period
+cats <- aggregate(raw_data_dummies2, by=list(dat$policy_yr_qtr), FUN=sum)
+head(cats)
+
+#isolate all the numeric variables (i.e., not based on categorical data)
+raw_data_numeric <- data.frame(dat[,c(
+"WH_Deductible"
+,"LOI"
+,"Year_Built"
+,"miles_to_ocean"
+,"baserate"
+,"LOI_Factor"
+,"uw_scale_factor"
+,"age_factor"
+,"construction_factor"
+,"coverage_factor"
+,"deductible_factor"
+,"form_factor"
+,"protection_class_factor"
+,"regionfactor"
+,"windload"
+,"minrate"
+,"minimum_premium"
+,"total_factor"
+,"Charged.Prem"
+,"Manual.Prem"
+,"Policy.Premium"
+,"loss_paid"
+,"lae_paid"
+,"loss_reserve"
+,"lae_reserve"
+,"total_incurred"
+,"clm_ct"
+,"capped_loss_ratio"
+,"policy_yr_qtr"
+)])
+
+#aggregate numeric data by averaging over time periods
+nums <- aggregate(raw_data_numeric, by=list(raw_data_numeric$policy_yr_qtr), FUN=mean)
+#?apply
+#head(nums)
+
+#aggregate numeric data by summing over time periods
+nums.sum <- aggregate(raw_data_numeric, by=list(raw_data_numeric$policy_yr_qtr), FUN=sum)
+
+incurred.loss.ratio <- nums.sum$total_incurred/nums.sum$Charged.Prem
+#clms.freq <- nums.sum$clm_ct
+
+SeriesData <- cbind(cats, nums)
+#head(SeriesData)
+write.csv(SeriesData, "SeriesData.csv")
+
+#fix column names to have proper name syntax
+tidy.colnames <- make.names(colnames(SeriesData), unique=TRUE)
+colnames(SeriesData) <- tidy.colnames
+
+#get list of variables, and paste into exported list below
+write.csv(file="colnames.csv",x=tidy.colnames)
+
+#Use the list below as a starting point for selecting predictor variables. Uncomment variables to select.
+
+x <- SeriesData
+
+
+#head(x)
+
+#scale the independent variables
+x.scaled <- scale(x)
+
+#Isolate dependent variable values, based on name given in global variable inputs above
+y <- SeriesData[,dependent.variable]
+y.unscaled <- y
+
+#scale the dependent variable
+y.scaled <- scale(y)
+
+#save column names
+x.colnames <- data.frame(colnames(x))
+
+```
+
+##Whitening the Time Series Data
+
+Before analyzing time series data to search for correlations with leading indicators, we first pre-whiten all of the variables.  This makes the data look more like white noise, by removing artifacts that can cause spurious correlations, such as seasonality, trend, and inherent moving average effects.  This analysis removes these effects utilizing the popular ARIMA method (Auto-regressive, Integrated, Moving Average).  After processing the data with ARIMA, each variable resembles white noise.  It is this data set that we use to find the leading indicators that are most correlated with the target variable (which is also pre-whitened for this step).
+
+Univariate forecasts are also be generated by the ARIMA method.  These forecasts are based upon any inherent seasonality, trend, and moving average patterns found within each variable's historical data.  A graph of each forecast is shown in this section.  A flat line forecast for any given variable means that there were not enough effects from trend, seasonality/cyclicality, or moving average components within the time series upon which to base a forecast.  In this case, the forecast is equivalent to the mean.  The whitened data set is produced by subtracting each variable's actual values from their forecasted values.
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+##ARIMA Time Series Analysis
+
+#i=1
+num.cols <- length(x[1,])
+#apply(x,1,function(x) sum(is.na(x)))
+#str(x)
+#?auto.arima
+#generate ARIMA plots...intent is to get ARIMA parameters, rather than forecasts
+x.arima.residuals = NULL
+for (i in 1:num.cols){
+  fit <- auto.arima(x.scaled[,i])
+  if(include.arima.plots == TRUE){
+     pdf(paste("plots/ARIMA_",x.colnames[i,],".pdf", sep="")) #print graph to PDF file
+     par(mar=c(8,4,2,2))
+     plot(forecast(fit,h=maxlag), sub=paste(x.colnames[i,]))
+     dev.off()
+
+     par(mar=c(8,4,2,2)) #repeat graph to show it in R Markdown
+     plot(forecast(fit,h=maxlag), sub=paste(x.colnames[i,]))
+  } #end if
+
+  #assemble a table of ARIMA residuals for use in cross-correlation analysis
+  temp.resid <- resid(fit)
+  x.arima.residuals <- as.matrix(cbind(x.arima.residuals, temp.resid))
+} #end loop
+
+#run arima transformation on the dependent variable
+fit=NULL
+fit <- auto.arima(y.scaled)
+
+if(include.arima.plots == TRUE){
+  pdf(paste("plots/ARIMA_",dependent.variable,".pdf", sep=""))
+  par(mar=c(8,4,2,2))
+  plot(forecast(fit,h=maxlag), sub=paste(dependent.variable, sep=""))
+  dev.off()
+
+  par(mar=c(8,4,2,2)) #repeat graph to show it in R Markdown
+  plot(forecast(fit,h=1), sub=paste(dependent.variable, sep="")) 
+} #end if
+y.arima.residuals <- resid(fit)
+
+#create a standardized, scaled, and normalized version of the data
+#?scale
+#glm
+
+if(include.QQ.plots == TRUE){
+#check distributions of independent variables for normality
+  for (i in 1:length(x.scaled[1,])){
+    pdf(paste("plots/QQ_",x.colnames[i,],".pdf", sep=""))
+    qqnorm(x.arima.residuals[,i], main=paste(x.colnames[i,]))
+    dev.off()
+
+    qqnorm(x.arima.residuals[,i], main=paste(x.colnames[i,])) #repeat graph to show it for R Markdown
+  }
+}
+
+#check dependent variable for normality
+#qqnorm(y.arima.residuals, main=paste(dependent.variable,sep=""))
+
+#check offset variable for normality
+#qqnorm(offset.arima.residuals, main=paste(offset.variable,sep=""))
+
+##Cross Correlation Analysis
+
+#i=1
+##cross correlation analysis
+#leading indicators in 'x' will have negative lag values for the most significant
+#correlations in the chart.
+#note: analysis is run on ARIMA residuals so as to pre-whiten the data
+
+##function for generating cross correlation tables and plots  
+cross.correl <- function(indep.vars.prewhitened, dep.vars.prewhitened, plots.subdirectory.name){
+#rm(cross.correl)    
+  x <- indep.vars.prewhitened  
+  y <- dep.vars.prewhitened  
+  subdir <- plots.subdirectory.name
+  dir.create(paste("plots/",subdir,sep=""))  
+
+  pos.cor.tbl <- NULL
+  neg.cor.tbl <- NULL
+  tmp <- NULL
+  for (i in 1:length(x[1,])){
+    cross.correl <- ccf(x[,i], y, plot=FALSE, na.action = na.contiguous)
+
+    #find best correlation
+    ind.max <- which(abs(cross.correl$acf[1:length(cross.correl$acf)])==max(abs(cross.correl$acf[1:length(cross.correl$acf)])))
+    #extract optimal lag, and optimal corresponding correlation coefficient
+    max.cor <- cross.correl$acf[ind.max]
+    lag.opt <- cross.correl$lag[ind.max]
+
+    #calculate statistical significance of the optimal correlation    
+    p.val <- 2 * (1 - pnorm(abs(max.cor), mean = 0, sd = 1/sqrt(cross.correl$n.used)))
+
+    ## positively correlated, statistically significant, leading indicators
+    if(p.val <= 0.05 && lag.opt < 0 && max.cor > 0){
+       #make table
+       tmp <- cbind(paste(x.colnames[i,]), round(max.cor,2), lag.opt, round(p.val,3))
+       pos.cor.tbl <- rbind(tmp, pos.cor.tbl)
+       #make plot
+       pdf(paste("plots/",subdir,"/CCF_pos_",x.colnames[i,],".pdf", sep=""))
+       par(mar=c(5,7,4,2)) #set the margins so title does not get cut off
+       ccf(x[,i], y, plot=TRUE, main=paste(x.colnames[i,]), na.action = na.contiguous)    
+       dev.off()
+
+       #repeat graph for R Markdown purposes
+       par(mar=c(5,7,4,2)) #set the margins so title does not get cut off
+       ccf(x[,i], y, plot=TRUE, main=paste(x.colnames[i,]), na.action = na.contiguous) 
+    } #end if
+       
+    ## negatively correlated, statistically significant, leading indicators
+    if(p.val <= 0.05 && lag.opt < 0 && max.cor < 0){
+       #make table
+       tmp <- cbind(paste(x.colnames[i,]), round(max.cor,2), lag.opt, round(p.val,3))
+       neg.cor.tbl <- rbind(tmp, neg.cor.tbl)
+       #make plot
+       pdf(paste("plots/",subdir,"/CCF_neg_",x.colnames[i,],".pdf", sep=""))
+       par(mar=c(5,7,4,2)) #set the margins so title does not get cut off
+       ccf(x[,i], y, plot=TRUE, main=paste(x.colnames[i,]), na.action = na.contiguous)    
+       dev.off()
+
+       #repeat graph for R Markdown purposes       
+       #par(mar=c(5,7,4,2)) #set the margins so title does not get cut off
+       #ccf(x[,i], y, plot=TRUE, main=paste(x.colnames[i,]), na.action = na.contiguous)    
+    } #end if
+} #end loop
+
+
+  ##export csv reports: 
+  #one for significant positive leading indicators, and one for significant negative leading indicators  
+  #positive correlation leading indicator summary
+  colnames(pos.cor.tbl) <- c("Variable", "Cor", "Lag", "p_val")
+  print(kable(data.frame(pos.cor.tbl),caption="Positively correlated leading indicators"))
+  write.csv(data.frame(pos.cor.tbl), paste("plots/",subdir,"/LeadingIndicators_Positive.csv",sep=""))
+
+  #negative correlation leading indicator summary
+  colnames(neg.cor.tbl) <- c("Variable", "Cor", "Lag", "p-val")
+  print(kable(data.frame(neg.cor.tbl),caption="Negatively correlated leading indicators")) 
+  write.csv(data.frame(neg.cor.tbl), paste("plots/",subdir,"/LeadingIndicators_Negative.csv",sep=""))
+  
+  #combine positive and negative leading indicator lists into one reference table
+  leading.indicators <- rbind(pos.cor.tbl, neg.cor.tbl)
+  return(leading.indicators)
+  
+} #end function
+
+```
+
+##Identify Leading Indicators
+
+This section groups leading indicators into those that are positively correlated with the target variable, and those that are negatively correlated with the target variable.  The analysis uses the cross-correlation function to find significant leading indicators that are correlated with the target variable.  
+
+This process creates the graphs that follow.  The vertical lines in the graphs represent correlation coefficients.  The correlation coefficent levels are shown in the y-axis.  The x-axis shows the lags that were tested in the analysis.  The horizontal dotted lines represent statistical significance at a 95% confidence level: the upper dotted line is for positive correlations, and the lower dotted line for negative ones.  
+
+Leading indicators are considered to be those variables where the longest vertical correlation coefficient line, crosses one of the dotted significance lines, to the left of the zero in the x-axis.  When this condition occurs, it means that the greatest correlation occurs when we lag the data such that the predictor variable precedes the target variable.
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+#make list of leading indicators with TOTAL CLAIMS as target variable - for reference - using above function
+  leading.indicators.total.clms <- cross.correl(indep.vars.prewhitened = x.arima.residuals, dep.vars.prewhitened = y.arima.residuals, plots.subdirectory.name = "total_claims")
+
+#make list of leading indicators with INCURRED LOSS RATIO as target variable - using above function
+  leading.indicators.incurred.lr <- cross.correl(indep.vars.prewhitened = x.arima.residuals, dep.vars.prewhitened = incurred.loss.ratio, plots.subdirectory.name = "incurred_loss_ratio")
+
+#write list of leading indicators to csv file
+write.csv(leading.indicators.incurred.lr, "list.leading.indicators.incurred.lr.csv")  
+    
+##assemble matrix of all significant leading indicators and corresponding data
+lead.ind.inc.lr.matrix <- x.scaled[,leading.indicators.incurred.lr[,"Variable"]]
+write.csv(lead.ind.inc.lr.matrix, "lead.ind.inc.lr.matrix.csv")
+#write.csv(x.scaled, "x.csv")
+
+#identify the longest lag time to adjust dependent (y) variable
+longest.lag <- max(abs(as.numeric(leading.indicators.incurred.lr[,"Lag"])))
+shortest.lag <- min(abs(as.numeric(leading.indicators.incurred.lr[,"Lag"])))
+
+#save variable names for the significant leading indicators
+leading.ind.headings <- colnames(lead.ind.inc.lr.matrix)
+
+##adjust the matrix for each variable's corresponding lag time
+#lead.ind.inc.lr.matrix[,1]
+lead.ind.inc.lr.matrix <- apply(lead.ind.inc.lr.matrix, 2, rev) #reverse order of variables
+#lead.ind.inc.lr.matrix[,1] #check to be sure reverse ording worked
+temp.lag.adj <- NULL
+lead.ind.lag.adjusted <- NULL
+#i=1
+for(i in 1:length(leading.ind.headings)){
+#lead.ind.inc.lr.matrix[,i]
+  temp.lag.adj <- lead(lead.ind.inc.lr.matrix[,i], abs(as.numeric(leading.indicators.incurred.lr[i,"Lag"])))
+  lead.ind.lag.adjusted <- cbind(lead.ind.lag.adjusted, temp.lag.adj)
+}
+
+#lead.ind.lag.adjusted[,1]
+
+##reverse back the order of the dependent variable training set, after it was adjusted for lags
+lead.ind.lag.adjusted <- apply(lead.ind.lag.adjusted, 2, rev) #reverse order of variables
+
+#lead.ind.lag.adjusted[,1]
+#length(lead.ind.lag.adjusted[1,])
+
+#add back the column headers
+tidy.colnames <- make.names(leading.ind.headings, unique=TRUE)
+colnames(lead.ind.lag.adjusted) <- tidy.colnames
+write.csv(lead.ind.lag.adjusted, "lead.ind.lag.adjusted.including.NAs.csv")
+
+y.leading.nonwhitened.unscaled <- drop_na(data.frame(lead(y.unscaled, longest.lag)))
+rownames(y.leading.nonwhitened.unscaled) <- NULL
+y.leading.nonwhitened.unscaled <- as.matrix(y.leading.nonwhitened.unscaled)
+colnames(y.leading.nonwhitened.unscaled) <- make.names(colnames(y.leading.nonwhitened.unscaled))
+
+
+#remove the NA's
+lead.ind.lag.adjusted <- drop_na(data.frame(lead.ind.lag.adjusted))
+
+x.leading.whitened.scaled <- data.frame(lead.ind.lag.adjusted)
+rownames(x.leading.whitened.scaled) <- NULL #remove rownames, which get messed up when using rev
+x.leading.whitened.scaled <- as.matrix(x.leading.whitened.scaled)
+write.csv(x.leading.whitened.scaled, "x.leading.whitened.scaled.csv")
+
+#append dependent variable: only used for modeling algorithms that need y ~ x format, instead of x, y
+lead.ind.lag.adjusted <- data.frame(x.leading.whitened.scaled, y.leading.nonwhitened.unscaled)
+write.csv(lead.ind.lag.adjusted, "lead.ind.lag.adjusted.csv")
+
+### generate model ###
+
+##cross validated glmnet
+set.seed(123)
+cv.glmnet.fit <- cv.glmnet(x.leading.whitened.scaled, y.leading.nonwhitened.unscaled, family = "gaussian", alpha = 1)
+str(cv.glmnet.fit)
+
+pdf("GLMNET_MSE.pdf")
+plot(cv.glmnet.fit)
+dev.off()
+
+plot(cv.glmnet.fit)
+
+```
+
+
+#Forecasting
+
+The leading indicators in the preceding step are assembled into a matrix that is used to generate a predictive model based on a GLMNet algorithm.  Although this is a regularized regression method that can be used to deal with micro arrays such as this, where the number of columns exceeds the number of rows, the width of this data set was creating computational challenges.  The GLMNet forecast was run on only leading indicator variables to make the compute process more tractable.  Other methods can be explored to attempt to utilize all of the data, such as dimensionality reduction techniques (e.g., principal components for time series, or singular spectrum analysis); Bayesian Vector Auto Regression (BVAR) with regularization; and deep learning algorithms (e.g., recurrent neural networks).
+
+The figure below shows the standard error ranges of a GLMNet model fitted to the data.  It helps in estimating the best number of variables, as well as the best penalty value for the shrinkage weighting parameter (i.e., best lambda value).
+
+
+```{r get_coefficients_glmnet, echo=FALSE, results='hide', message=FALSE, warning=FALSE}
+
+#get coefficients from GLMNET
+cvfitlm.coef.lambda.1se.prewhitened <- coef(cv.glmnet.fit, s = "lambda.1se")
+
+#send coefficient list to a text file
+print(cvfitlm.coef.lambda.1se.prewhitened)
+
+##create forecast set matrix based on each variable's corresponding lag time
+#lead.ind.inc.lr.matrix[,2]
+forecast.raw.matrix <- apply(lead.ind.inc.lr.matrix, 2, rev) #reverse order of variables
+#forecast.raw.matrix[,1] #check to be sure reverse ording worked
+#lead.ind.inc.lr.matrix[,1] #compare
+temp.lag.adj <- NULL
+forecast.set <- NULL
+#i=1
+for(i in 1:length(leading.ind.headings)){
+#lead.ind.inc.lr.matrix[,i]
+  temp.lag.adj <- lead(lead.ind.inc.lr.matrix[,i], abs(as.numeric(leading.indicators.incurred.lr[i,"Lag"])+shortest.lag))
+  forecast.set <- cbind(forecast.set, temp.lag.adj)
+}
+
+#forecast.set[,1]
+
+#reverse back the order of the dependent variable training set, after it was adjusted for lags
+forecast.set <- apply(forecast.set, 2, rev) #reverse order of variables
+#forecast.set[,1]
+
+#add back the column headers
+tidy.colnames <- make.names(leading.ind.headings, unique=TRUE)
+colnames(forecast.set) <- tidy.colnames
+write.csv(forecast.set, "forecast_set_NAs.csv")
+
+#remove the NA's, which also has the effect of adjusting the number of rows to be less than the greatest lag
+forecast.set <- drop_na(data.frame(forecast.set))
+forecast.matrix <- as.matrix(forecast.set)
+#forecast.set[,1]
+write.csv(forecast.set, "forecast_set.csv")
+
+##make predictions
+predictions <- predict(cv.glmnet.fit, newx=forecast.matrix, type="response", s = "lambda.1se")
+#?predict.cv.glmnet
+
+##create plot of the glmnet forecast
+y.actual <- y.leading.nonwhitened.unscaled
+forecast.ahead <- drop_na(data.frame(predictions[length(y.actual)+1:length(predictions)]))
+forecast.ahead <- as.matrix(forecast.ahead)
+
+pdf("glmnet_forecast.pdf")
+plot(c(y.actual, forecast.ahead), type='p', main = "Forecast", ylab="Values", xlab="Time")
+lines(y.actual, col = "black", lty = 1, lwd = 2)
+lines(predictions, col = "green", lty = 1, lwd = 2)
+legend("topleft", c("Forecast", "Actual"), col = c("green", "black"), text.col = "black", lty = c(1, 1, 1, 1, 2), lwd = c(2, 2, 2, 1, 2), merge = TRUE, bg = 'gray90', cex = .75)
+dev.off()
+
+```
+
+##GLMNet Model
+
+The figure below shows the forecast of incurred losses, versus the actual, based on the resulting GLMNet model on the leading indicators.
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+plot(c(y.actual, forecast.ahead), type='p', main = "Forecast", ylab="Values", xlab="Time")
+lines(y.actual, col = "black", lty = 1, lwd = 2)
+lines(predictions, col = "green", lty = 1, lwd = 2)
+legend("topleft", c("Forecast", "Actual"), col = c("green", "black"), text.col = "black", lty = c(1, 1, 1, 1, 2), lwd = c(2, 2, 2, 1, 2), merge = TRUE, bg = 'gray90', cex = .75)
+
+pdf("glmnet_forecast.pdf")
+plot(c(y.actual, forecast.ahead), type='p', main = "Forecast", ylab="Values", xlab="Time")
+lines(y.actual, col = "black", lty = 1, lwd = 2)
+lines(predictions, col = "green", lty = 1, lwd = 2)
+legend("topleft", c("Forecast", "Actual"), col = c("green", "black"), text.col = "black", lty = c(1, 1, 1, 1, 2), lwd = c(2, 2, 2, 1, 2), merge = TRUE, bg = 'gray90', cex = .75)
+dev.off()
+
+colnames(forecast.ahead) <- "Forecast (ascending order if more than one value)"
+kable(forecast.ahead)
+write.csv(file="y-prediction.csv", x=forecast.ahead)
+
+```
+
+##GLMNet Coefficients
+
+Following are the coefficients selected by LASSO regression.  The first table shows all of the leading indicators that were considered in the algorithm, including those that were not selected by it, as indicated by a coefficient of zero.  The second table isolates just those coefficients that are non-zero, and are included in the final model.
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+##prepare data for STL function
+
+#extract coefficients
+cvfitlm.coef.lambda.1se.prewhitened <- coef(cv.glmnet.fit, s = "lambda.1se")
+
+#add a y-intercept column heading for the first listed element
+cvfitlm.coef.lambda.1se.prewhitened.tbl <- cbind(c("y-intercept",tidy.colnames), as.vector(cvfitlm.coef.lambda.1se.prewhitened))
+
+#add headers to the two resulting columns in the coefficient list: "Variable", "Coefficient"
+colnames(cvfitlm.coef.lambda.1se.prewhitened.tbl) <- c("Variable","Coefficient")
+
+#show coefficient list table
+kable(cvfitlm.coef.lambda.1se.prewhitened.tbl, caption="Coefficients on Pre-Whitened Time Series Data")
+
+#put the coefficient list into a data frame format
+cvfitlm_coef_lamdbda_1se_prewhitened_tbl <- data.frame(cvfitlm.coef.lambda.1se.prewhitened.tbl)
+
+#isolate coefficients that are not zero
+glmnet.coefficients <- sqldf("select * from cvfitlm_coef_lamdbda_1se_prewhitened_tbl where Coefficient != 0")
+```
+
+If we isolate all of the non-zero coefficients to show only those variables that were selected to be included in the final model by the LASSO feature selection algorithm, the short list of variables appears as follows.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#show all non-zero coefficients
+kable(glmnet.coefficients, caption="GLMNet Coefficients")
+
+```
+
+##Decomposed View of the Predictor Variables
+
+Following are graphs from an analysis that decomposes (isolates) each predictor variable's trend and seasonality.  This is so that we can see whether the changes in predictor variables are mostly due to seasonality, or are part of a larger increase or decrease in exposure over time.  Unlike the ARIMA analysis method, this forecast is non-linear.  It uses the curve fitting regression method, LOESS (i.e., Locally Optimized Sum of Squares).  The method is also applied to non-whitened, untransformed data.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+#get coefficient names where >0, except for "y-intercept", which is the first row in the list
+glmnet.coef.names <- as.character(glmnet.coefficients[-1,"Variable"]) 
+#cleanup name list with tidyr, as sqldf in preceding step can corrupt the names
+glmnet.coef.names <- make.names(glmnet.coef.names, unique=TRUE) 
+
+STL.data <- data.frame(SeriesData[,glmnet.coef.names])
+
+STL.data.colnames <- colnames(STL.data)
+
+#i=1
+for(i in 2:length(STL.data[1,])){
+  temp.stl <- stl(ts(STL.data[,i], frequency=4), s.window=7)
+  plot(temp.stl, main=STL.data.colnames[i])
+} #end loop
+
+
+```
+
+##BVAR Forecast
+Utilizing the Bayesian Vector Auto Regression (BVAR) algorithm, it is possible to take advantage of the covariance between the variables to attempt to look farther ahead into the future, than the GLM-Net/LASSO, leading indicator method will allow.  Figure 10 shows the result of this method.  The forecast is shown to the right of the vertical dotted line.  The historical data is shown to the left of the line, and goes back farther in time than what is shown in the graph of the forecast from the GLM-Net/LASSO method.  Both forecasting methods show an increase in incurred losses one quarter ahead.  However, beyond this, the BVAR method shows a leveling of the forecasted trend in incurred losses for the following three quarters.
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+###############################################################
+##Forcast
+
+x_and_y <- cbind.data.frame(x, y)
+#colnames(Y) <- col.names
+col.names <- colnames(x_and_y)
+
+nms <- dependent.variable
+x_and_y <- as.matrix(x_and_y)
+
+#x.pca <- princomp(t(scale(x)))
+x.pca <- prcomp(x, center=TRUE, scale=TRUE)
+
+pdf("x_pca.pdf")
+plot(x.pca)                  
+dev.off()
+
+predictors.pca <- x.pca$x[,1:6]
+write.csv(predictors.pca, "x_pca.csv")
+#length(x[,1])
+#str(x.pca)
+
+Y <- cbind(predictors.pca, y)
+
+# Fit a Basic VAR-L(3,4) on simulated data
+T1=floor(nrow(Y)/3)
+T2=floor(2*nrow(Y)/3)
+#?constructModel
+#m1=constructModel(Y,p=4,struct="Basic",gran=c(20,10),verbose=FALSE,IC=FALSE,T1=T1,T2=T2,ONESE=TRUE)
+#m1=constructModel(Y,p=4,struct="Tapered",gran=c(50,10),verbose=FALSE,T1=T1,T2=T2,IC=FALSE)
+#plot(m1)
+#results=cv.BigVAR(m1)
+#plot(results)
+#predict(results,n.ahead=1)
+
+#SparsityPlot.BigVAR.results(results)
+
+#str(results)
+#results@preds
+#results@alpha
+#results@Granularity
+#results@Structure
+#results@lagmax
+#results@Data
+#plot(results@Data)
+
+#install.packages("devtools")
+#library(devtools)
+#install_github("gabrielrvsc/HDeconometrics")
+
+###################################
+#The above, BigVAR package will not handle data sets this wide.  Trying the
+#Bayesian Vector Auto Regression (BVAR) algorithm
+
+###################################
+##Perform analysis on pre-whitened data
+
+# Break data into in and out of sample to test model accuracy
+Yin = Y[1:T2,]
+Yout = Y[(T2+1):(T1+T2),]
+
+# BVAR 
+#?lbvar
+#?predict
+#?lbvar
+modelbvar=lbvar(Yin, p = 5)
+predbvar=predict(modelbvar,h=4)
+#str(predbvar)
+
+# Forecasts of the volatility
+#k=paste(dependent.variable)
+k="y"
+pdf(file=paste("plots/", dependent.variable, "_forecast.pdf",sep=""))
+plot(c(Y[,k],predbvar[,k]),type="l", main=paste(dependent.variable), xlab="Time", ylab="Values")
+lines(c(rep(NA,length(Y[,k])),predbvar[,k]))
+abline(v=length(Y[,k]),lty=2,col=4)
+dev.off()
+
+#show plot without saving to PDF file
+plot(c(Y[,k],predbvar[,k]),type="l", main=paste(dependent.variable), xlab="Time", ylab="Values")
+lines(c(rep(NA,length(Y[,k])),predbvar[,k]))
+abline(v=length(Y[,k]),lty=2,col=4)
+
+# = Overall percentual error = #
+#MAPEbvar=abs((Yout-predbvar)/Yout)*100
+#aux=apply(MAPEbvar,2,lines,col="lightskyblue1")
+#lines(rowMeans(MAPEbvar),lwd=3,col=4,type="b")
+#dev.off()
+
+# = Influences = #
+#aux=modelbvar$coef.by.block[2:23]
+#impacts=abs(Reduce("+", aux ))
+#diag(impacts)=0
+#I=colSums(impacts)
+#R=rowSums(impacts)
+#par(mfrow=c(2,1))
+#barplot(I,col=rainbow(30),cex.names = 0.3, main = "Most Influent")
+#barplot(R,col=rainbow(30),cex.names = 0.3, main = "Most Influenced")
+
+pdf(file=paste("plots/", dependent.variable, "_barchart.pdf",sep=""))
+aux=modelbvar$coef.by.block
+impacts=abs(Reduce("+", aux ))
+diag(impacts)=0
+I=colSums(impacts)
+R=rowSums(impacts)
+par(mfrow=c(2,1))
+barplot(I,col=rainbow(30),cex.names = 0.3, main = "Most Influent")
+barplot(R,col=rainbow(30),cex.names = 0.3, main = "Most Influenced")
+dev.off()
+
+#show plot without saving to PDF file
+aux=modelbvar$coef.by.block
+impacts=abs(Reduce("+", aux ))
+diag(impacts)=0
+I=colSums(impacts)
+R=rowSums(impacts)
+par(mfrow=c(2,1))
+barplot(I,col=rainbow(30),cex.names = 0.3, main = "Most Influent")
+barplot(R,col=rainbow(30),cex.names = 0.3, main = "Most Influenced")
+
+
+###############################################################
+
+```
+
+#Conclusion
+
+Based on this analysis, relatively short-term increases in certain unfavorable property exposure classifications were likely to result in a forecasted upward pressure on incurred losses.  However, there does not appear to be a systemic pattern in underwriting trends that would suggest an ongoing increase in incurred losses.  The observed increases in adverse exposure that had occurred a few quarters ago have not continued, and in fact, have been decreasing.  Therefore, the increase in the incurred loss trend that is forecasted is not likely to continue past a single quarter, and may level out over about a three quarter period thereafter.
+A re-underwriting effort is a natural response to an increase in losses.  While it can always be healthy to re-evaluate a book of inforce business from an underwriting perspective, care may be advised in this case, so as to avoid disrupting the current book too much.  This analyses suggests that the problem may have fixed itself already.  Or, to give our underwriters more credit, they may well have already nipped this one in the bud, if current exposure class trends are an indication.
+ 
+
+
+
+
+
+
+
+
