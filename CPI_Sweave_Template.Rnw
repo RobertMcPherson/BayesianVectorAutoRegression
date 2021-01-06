@@ -31,7 +31,7 @@
 
 \section{Consumer Price Index Forecast Variables and Methods}
 
-Following is a brief analysis, to forecast the Consumer Price Index, as a measure of inflation.  It is not meant to be a comprehensive, broad treatment of the many variables that might affect inflation.  Rather, the analysis focuses on some economic trends that have been in the news lately, and that are sometimes said to portend a possible increase in inflation.  For example, the U.S. national debt to GDP has rarely been higher, and has caused great concern for many.  Also, the rate of inflation has just begun to increase, after years of being at record lows.  Lastly among economic variables, the velocity of money is sometimes said to be related to inflation, as well.  This analysis examines these variables, and their combined relationship to inflation, as measured by CPI.  The data in this study goes back to 1961, and extends through 2017.
+Following is a brief analysis, to forecast the Consumer Price Index, as a measure of inflation.  It is not meant to be a comprehensive, broad treatment of the many variables that might affect inflation.  Rather, the analysis focuses on some economic trends that have been in the news lately, and that are sometimes said to portend a possible increase in inflation.  For example, the U.S. national debt to GDP has rarely been higher, and has caused great concern for many.  Also, the rate of inflation has just begun to increase, after years of being at record lows.  Lastly among economic variables, the velocity of money is sometimes said to be related to inflation, as well.  This analysis examines these variables, and their combined relationship to inflation, as measured by CPI.  The data in this study goes back to 1961, and extends through 2019.
 
 In addition to the economic variables, demographic variables were also considered.  As a proxy for age distributions, the number of births by year, and also the birth rate by year, were included along with the previously mentioned economic variables.  It is well known that the population of the U.S. has been aging.  As older, retired individuals tend to purchase fewer consumer goods, this has helped inflation to remain very low.  
 
@@ -39,10 +39,9 @@ The difference between the number of people entering age 65, the standard retire
 
 <<echo=FALSE, results=hide>>=
 
- rm(list=ls())
-
-#setwd("R:/AnalyticsTeam/Personal/May/BitBucket/Gemini Time Series")
-#setwd("C:/Users/rmcpherson/Documents/Segments/Phil Welt Segment/Gemini")
+rm(list=ls())
+#Sys.which("pdflatex")
+#install.packages("orderedLasso")
 
 library(sqldf) #for running sql on data frames
 library(dummies) #for creating one-hot encoding
@@ -51,7 +50,7 @@ library(glmnet) #for running regularized GLM
 library(knitr) #for reproducible research, i.e., Markdown
 #library(testthat)
 library(BigVAR)
-library(orderedLasso)
+#library(orderedLasso)
 library(reshape)
 library(ggplot2)
 library(Quandl)
@@ -68,7 +67,7 @@ library(xts)
 
 ##########################
 ##Set the working directory
-setwd("/Users/robertmcpherson/Documents/Code/R/TimeSeriesAnalysis/TimeSeries")
+setwd("C:\\Users\\P2889196\\Documents\\Code\\mygithub\\BayesianVectorAutoRegression")
 ##########################
 
 ##########################
@@ -117,22 +116,22 @@ include.QQ.plots <- FALSE
 
 
 #Note: this process takes the data in descending order, with the most recent data at the
-CPI <- Quandl("RATEINF/CPI_USA", api_key="DJGcfzQc5RYP1JSycMBv", collapse="annual", start_date="1960-12-31", end_date="2017-12-31", type="raw", order="asc", force_irregular=TRUE)
+CPI <- Quandl("RATEINF/CPI_USA", api_key="DJGcfzQc5RYP1JSycMBv", collapse="annual", start_date="1960-12-31", end_date="2019-12-31", type="raw", order="asc", force_irregular=TRUE)
 
 #Nonfinancial corporate business; short-term debt as a percentage of total debt, Annual
-shortTermDebtToLongTerm <- Quandl("FED/FL104140006_A", api_key="DJGcfzQc5RYP1JSycMBv", collapse="annual", start_date="1960-12-31", end_date="2017-12-31", type="raw", order="asc", force_irregular=TRUE)
+shortTermDebtToLongTerm <- Quandl("FED/FL104140006_A", api_key="DJGcfzQc5RYP1JSycMBv", collapse="annual", start_date="1960-12-31", end_date="2019-12-31", type="raw", order="asc", force_irregular=TRUE)
 
 #Financial soundness indicator, households; debt as a percent of gross domestic product
-debtToGDP <- Quandl("FED/FL010000336_Q", api_key="DJGcfzQc5RYP1JSycMBv",collapse="annual", start_date="1960-12-31", end_date="2017-12-31", type="raw", order="asc", force_irregular=TRUE)
+debtToGDP <- Quandl("FED/FL010000336_Q", api_key="DJGcfzQc5RYP1JSycMBv",collapse="annual", start_date="1960-12-31", end_date="2019-12-31", type="raw", order="asc", force_irregular=TRUE)
 
 
-GDP <- Quandl("FED/FU086902001_A", api_key="DJGcfzQc5RYP1JSycMBv", collapse="annual", start_date="1960-12-31", end_date="2017-12-31", type="raw", order="asc", force_irregular=TRUE)
+GDP <- Quandl("FED/FU086902001_A", api_key="DJGcfzQc5RYP1JSycMBv", collapse="annual", start_date="1960-12-31", end_date="2019-12-31", type="raw", order="asc", force_irregular=TRUE)
 
 
-m1Velocity <- Quandl("FRED/M1V", api_key="DJGcfzQc5RYP1JSycMBv",collapse="annual", start_date="1960-12-31", end_date="2017-12-31", type="raw", order="asc", force_irregular=TRUE)
+m1Velocity <- Quandl("FRED/M1V", api_key="DJGcfzQc5RYP1JSycMBv",collapse="annual", start_date="1960-12-31", end_date="2019-12-31", type="raw", order="asc", force_irregular=TRUE)
 
 
-m2Velocity <- Quandl("FRED/M2V", api_key="DJGcfzQc5RYP1JSycMBv", collapse="annual", start_date="1960-12-31", end_date="2017-12-31", type="raw", order="asc", force_irregular=TRUE)
+m2Velocity <- Quandl("FRED/M2V", api_key="DJGcfzQc5RYP1JSycMBv", collapse="annual", start_date="1960-12-31", end_date="2019-12-31", type="raw", order="asc", force_irregular=TRUE)
 
 raw.ts <- cbind(m1Velocity, m2Velocity, GDP[-1,], debtToGDP[-1,], shortTermDebtToLongTerm[-1,], CPI[-1,])
 
@@ -155,47 +154,14 @@ colnames(data) <- c("CPI","shortTermDebtToLongTerm","debtToGDP","GDP","m1Velocit
 
 births <- read.csv("BirthsModified.csv")
 #impute the na values
-births.interp <- na.interpolation(ts(births))
+births.interp <- na_interpolation(ts(births))
 births.export <- apply(births.interp, 2, rev)
 head(births.export)
 write.csv(births.export, "births_interp_no_blanks.csv")
 
-births.trunc <- births.interp[1:57,3:5]
+births.trunc <- births.interp[1:59,3:5]
 births.2009 <- apply(births.trunc, 2, rev)
 head(births.2009)
-
-#na.interpolation(ts(births.trunc[,2]))
-#births.interp <- apply(births.trunc, 2, na.interpolation)
-#colnames(births.interp) <- c("Year", "Births", "BirthRate")
-#head(births.interp)
-
-#head(data)
-#str(data)
-#?rev
-#births.2009 <- apply(births.interp[], 2, rev)
-
-#################################
-##Not included - series too short
-##Get SPX data
-#SPX <- getSymbols("^GSPC",auto.assign = FALSE)
-#?getSymbols
-
-#SPX.xts <- as.xts(SPX)
-#SPX.yearly <- to.yearly(SPX.xts)
-
-#getSymbols("DJI", src = "yahoo", from = start_date, to = end_date)
-#DJI <- getSymbols("DJI", src = "yahoo")
-#DJI.xts <- as.xts(DJI)
-#DJI.interp <- na.interpolation(DJI.xts)
-#DJI.yearly <- to.yearly(DJI.interp)
-#################################
-
-
-##Import historical Dow Jones Industrial Average data
-#Dow <- read.csv("DJI_Historical_Chg_Data.csv")
-#head(Dow)
-#DowInterp <- na.interpolation(Dow)
-#DJIChg <- Dow[1:57,2]
 
 SeriesData <- cbind(births.2009, data)
 SeriesData <- SeriesData[,-1] #remove the "Year" column
@@ -288,7 +254,9 @@ if(include.QQ.plots == TRUE){
 
 
   #check dependent variable for normality
-  pdf(file=paste("plots/qqnorm_",dependent.variable,".pdf",sep=""))
+
+  
+    pdf(file=paste("plots/qqnorm_",dependent.variable,".pdf",sep=""))
   qqnorm(y.arima.residuals, main=paste(dependent.variable,sep=""))
   dev.off()
 }
@@ -440,7 +408,7 @@ T2=floor(2*nrow(Y)/3)
 
 # = Break data into in and out of sample to test model accuracy= #
 Yin = Y[1:T2,]
-Yout = Y[(T2+1):(T1+T2),]
+Yout = Y[(T2+1):(T1+T2+1),]
 
 # = Run models = #
 # = OLS = #
